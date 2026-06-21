@@ -1,0 +1,257 @@
+<%- include("../partials/head") %>
+<%- include("../partials/nav") %>
+<section class="section">
+  <div class="columns is-variable is-5">
+    <div class="column is-3">
+      <div class="panel glass-panel">
+        <p class="panel-heading">Feeds</p>
+        <a class="panel-block <%= !selectedFeedId && !selectedLabelId && !selectedSpecial ? 'is-active' : '' %>" href="/">
+          <span>All Articles</span>
+        </a>
+        <a class="panel-block <%= selectedSpecial === 'starred' ? 'is-active' : '' %>" href="/?special=starred">
+          <span>Starred Articles</span>
+        </a>
+        <% feeds.forEach((feed) => { %>
+          <a class="panel-block <%= String(selectedFeedId || '') === String(feed._id) ? 'is-active' : '' %>" href="/?feed=<%= feed._id %>">
+            <span><%= feed.title %></span>
+          </a>
+        <% }) %>
+      </div>
+
+      <div class="panel glass-panel">
+        <p class="panel-heading">Labels</p>
+        <% labels.forEach((label) => { %>
+          <a class="panel-block <%= String(selectedLabelId || '') === String(label._id) ? 'is-active' : '' %>" href="/?label=<%= label._id %>">
+            <span class="tag mr-2" style="background:<%= label.color %>;color:#fff;"><%= label.name %></span>
+          </a>
+        <% }) %>
+      </div>
+
+      <details class="box glass-panel disclosure-panel">
+        <summary class="disclosure-summary">
+          <span class="title is-6 mb-0">Add Feed</span>
+          <span class="button is-small is-light disclosure-button">Open</span>
+        </summary>
+        <div class="disclosure-body">
+          <form action="/feeds" method="post">
+            <div class="field">
+              <input class="input" type="text" name="title" placeholder="Feed title" required />
+            </div>
+            <div class="field">
+              <input class="input" type="url" name="feedUrl" placeholder="Feed URL" required />
+            </div>
+            <div class="field">
+              <input class="input" type="url" name="siteUrl" placeholder="Website URL" />
+            </div>
+            <div class="field">
+              <label class="label">Folders</label>
+              <div class="fixed-checkbox-list">
+                <% if (categories.length === 0) { %>
+                  <p class="is-size-7">Create a folder first if you want to organize this feed.</p>
+                <% } %>
+                <% categories.forEach((category) => { %>
+                  <label class="checkbox is-block mb-2">
+                    <input type="checkbox" name="categoryIds" value="<%= category._id %>" />
+                    <span class="ml-2"><%= category.name %></span>
+                  </label>
+                <% }) %>
+              </div>
+            </div>
+            <button class="button is-primary is-fullwidth">Subscribe</button>
+          </form>
+        </div>
+      </details>
+
+      <div class="box glass-panel">
+        <h2 class="title is-6">Folders</h2>
+        <form action="/categories" method="post">
+          <div class="field">
+            <input class="input" type="text" name="name" placeholder="Folder name" required />
+          </div>
+          <button class="button is-link is-fullwidth">Create Folder</button>
+        </form>
+        <div class="tags mt-4">
+          <% categories.forEach((category) => { %>
+            <a class="tag is-info is-light <%= String(selectedCategoryId || '') === String(category._id) ? 'is-info' : '' %>" href="/?category=<%= category._id %>"><%= category.name %></a>
+          <% }) %>
+        </div>
+      </div>
+    </div>
+
+    <div class="column is-9">
+      <div class="box reader-shell">
+        <div class="level">
+          <div class="level-left">
+            <div>
+              <h1 class="title is-4 mb-1"><%= selectedCategory ? selectedCategory.name : (selectedSpecial === "starred" ? "Starred Articles" : (selectedFeed ? selectedFeed.title : "Latest Articles")) %></h1>
+              <p class="subtitle is-6">
+                <%= selectedCategory ? "Articles from feeds in this folder." : (selectedSpecial === "starred" ? "Articles you have marked to keep handy." : (selectedLabel ? `Articles tagged with ${selectedLabel.name}` : (selectedFeed ? (selectedFeed.feedUrl || "Feed view") : "Unread-first reading with labels, publishing, and notes."))) %>
+              </p>
+            </div>
+          </div>
+          <div class="level-right">
+            <% if (selectedFeed) { %>
+              <div class="buttons">
+                <a class="button is-light" href="/<%= toggleUnreadViewQueryString %>"><%= unreadOnly ? 'Show All' : 'Unread Only' %></a>
+                <form action="/feeds/<%= selectedFeed._id %>/refresh" method="post">
+                  <button class="button is-link is-light">Refresh Feed</button>
+                </form>
+              </div>
+            <% } else if (selectedCategory) { %>
+              <div class="buttons">
+                <a class="button is-light" href="/<%= toggleUnreadViewQueryString %>"><%= unreadOnly ? 'Show All' : 'Unread Only' %></a>
+                <span class="tag is-link is-medium"><%= selectedCategory.name %></span>
+              </div>
+            <% } else if (selectedSpecial === "starred") { %>
+              <div class="buttons">
+                <a class="button is-light" href="/<%= toggleUnreadViewQueryString %>"><%= unreadOnly ? 'Show All' : 'Unread Only' %></a>
+                <span class="tag is-warning is-medium">Starred</span>
+              </div>
+            <% } else if (selectedLabel) { %>
+              <div class="buttons">
+                <a class="button is-light" href="/<%= toggleUnreadViewQueryString %>"><%= unreadOnly ? 'Show All' : 'Unread Only' %></a>
+                <span class="tag is-medium" style="background:<%= selectedLabel.color %>;color:#fff;"><%= selectedLabel.name %></span>
+              </div>
+            <% } else { %>
+              <div class="buttons is-align-items-center">
+                <a class="button is-light" href="/<%= toggleUnreadViewQueryString %>"><%= unreadOnly ? 'Show All' : 'Unread Only' %></a>
+                <div class="tags mb-0">
+                  <% labels.forEach((label) => { %>
+                    <span class="tag" style="background:<%= label.color %>;color:#fff;"><%= label.name %></span>
+                  <% }) %>
+                </div>
+              </div>
+            <% } %>
+          </div>
+        </div>
+
+        <% if (articles.length === 0) { %>
+          <div class="notification is-light">
+            <p class="has-text-weight-semibold mb-2">No articles yet.</p>
+            <p><%= selectedCategory ? "Add feeds to this folder, then refresh those feeds to populate the folder view." : (selectedSpecial === "starred" ? "Star some articles from the reader and they will appear here." : (selectedFeed ? "Try refreshing this feed, or check that the source URL is a valid RSS/Atom endpoint." : "Subscribe to a feed to start filling your reader.")) %></p>
+          </div>
+        <% } %>
+
+        <% if (selectedFeed) { %>
+          <details class="box mb-5 disclosure-panel">
+            <summary class="disclosure-summary">
+              <div>
+                <h2 class="title is-6 mb-1">Edit Feed</h2>
+                <p class="is-size-7">Change source URLs and folder membership.</p>
+              </div>
+              <span class="button is-small is-light disclosure-button">Edit</span>
+            </summary>
+            <div class="disclosure-body">
+              <form action="/feeds/<%= selectedFeed._id %>" method="post">
+                <div class="field">
+                  <label class="label">Title</label>
+                  <input class="input" type="text" name="title" value="<%= selectedFeed.title %>" required />
+                </div>
+                <div class="field">
+                  <label class="label">Feed URL</label>
+                  <input class="input" type="url" name="feedUrl" value="<%= selectedFeed.feedUrl %>" required />
+                </div>
+                <div class="field">
+                  <label class="label">Site URL</label>
+                  <input class="input" type="url" name="siteUrl" value="<%= selectedFeed.siteUrl %>" />
+                </div>
+                <div class="field">
+                  <label class="label">Folders</label>
+                  <div class="fixed-checkbox-list">
+                    <% categories.forEach((category) => { %>
+                      <label class="checkbox is-block mb-2">
+                        <input
+                          type="checkbox"
+                          name="categoryIds"
+                          value="<%= category._id %>"
+                          <%= getFeedCategoryIds(selectedFeed).includes(String(category._id)) ? "checked" : "" %>
+                        />
+                        <span class="ml-2"><%= category.name %></span>
+                      </label>
+                    <% }) %>
+                    <% if (categories.length === 0) { %>
+                      <p class="is-size-7">No folders yet.</p>
+                    <% } %>
+                  </div>
+                </div>
+                <div class="is-flex is-justify-content-space-between is-align-items-center">
+                  <div class="tags">
+                    <% getFeedCategoryIds(selectedFeed).forEach((categoryId) => { const category = categories.find((item) => String(item._id) === String(categoryId)); if (category) { %>
+                      <span class="tag is-info is-light"><%= category.name %></span>
+                    <% } }) %>
+                  </div>
+                  <button class="button is-primary">Save Feed</button>
+                </div>
+              </form>
+            </div>
+          </details>
+        <% } %>
+
+        <% articles.forEach((article) => { %>
+          <article class="card article-card mb-4 <%= article.isRead ? '' : 'is-unread' %>">
+            <div class="card-content">
+              <div class="level is-mobile">
+                <div class="level-left">
+                  <div>
+                    <p class="heading"><%= article.feedId?.title || "Feed" %></p>
+                    <p class="title is-5">
+                      <a href="/articles/<%= article._id %><%= viewQueryString %>"><%= article.title %></a>
+                    </p>
+                  </div>
+                </div>
+                <div class="level-right">
+                  <% if (article.isStarred) { %><span class="tag is-warning">Starred</span><% } %>
+                  <% if (article.isPublished) { %><span class="tag is-success">Published</span><% } %>
+                </div>
+              </div>
+              <div class="content">
+                <%- article.summary || article.content %>
+              </div>
+              <div class="is-flex is-justify-content-space-between is-align-items-center">
+                <div class="tags">
+                  <% (article.tags || []).forEach((tag) => { %>
+                    <span class="tag is-light"><%= tag %></span>
+                  <% }) %>
+                </div>
+                <div class="buttons">
+                  <form action="/articles/<%= article._id %>/state" method="post">
+                    <input type="hidden" name="isRead" value="<%= article.isRead ? 'false' : 'true' %>" />
+                    <button class="button is-small"><%= article.isRead ? 'Unread' : 'Read' %></button>
+                  </form>
+                  <form action="/articles/<%= article._id %>/state" method="post">
+                    <input type="hidden" name="isStarred" value="<%= article.isStarred ? 'false' : 'true' %>" />
+                    <button class="button is-small is-warning is-light">Star</button>
+                  </form>
+                  <form action="/articles/<%= article._id %>/labels" method="post">
+                    <div class="field has-addons">
+                      <div class="control">
+                        <div class="select is-small">
+                          <select name="labelId">
+                            <% labels.forEach((label) => { %>
+                              <option value="<%= label._id %>"><%= label.name %></option>
+                            <% }) %>
+                          </select>
+                        </div>
+                      </div>
+                      <div class="control">
+                        <button class="button is-small is-info is-light" <%= labels.length === 0 ? "disabled" : "" %>>Label</button>
+                      </div>
+                    </div>
+                  </form>
+                </div>
+              </div>
+              <% if ((article.labelIds || []).length > 0) { %>
+                <div class="tags mt-3">
+                  <% article.labelIds.forEach((label) => { %>
+                    <span class="tag" style="background:<%= label.color %>;color:#fff;"><%= label.name %></span>
+                  <% }) %>
+                </div>
+              <% } %>
+            </div>
+          </article>
+        <% }) %>
+      </div>
+    </div>
+  </div>
+</section>
+<%- include("../partials/footer") %>

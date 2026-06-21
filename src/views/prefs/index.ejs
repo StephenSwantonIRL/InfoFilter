@@ -1,0 +1,343 @@
+<%- include("../partials/head") %>
+<%- include("../partials/nav") %>
+<section class="section">
+  <div class="container">
+    <h1 class="title">Preferences</h1>
+    <div class="columns is-variable is-5">
+      <div class="column">
+        <div class="box glass-panel">
+          <h2 class="title is-5">Account</h2>
+          <form action="/prefs/account" method="post">
+            <div class="field">
+              <label class="label">Display name</label>
+              <input class="input" type="text" name="displayName" value="<%= currentUser.displayName %>" />
+            </div>
+            <div class="field">
+              <label class="label">Theme</label>
+              <div class="select is-fullwidth">
+                <select name="theme">
+                  <option value="light" <%= currentUser.preferences?.theme === "light" || !currentUser.preferences?.theme ? "selected" : "" %>>Light</option>
+                  <option value="dark" <%= currentUser.preferences?.theme === "dark" ? "selected" : "" %>>Dark</option>
+                </select>
+              </div>
+            </div>
+            <div class="field is-grouped is-grouped-multiline">
+              <label class="checkbox mr-4"><input type="checkbox" name="digestEnabled" <%= currentUser.preferences?.digestEnabled ? "checked" : "" %> /> Email digest</label>
+              <label class="checkbox"><input type="checkbox" name="unreadOnly" <%= currentUser.preferences?.unreadOnly ? "checked" : "" %> /> Unread first</label>
+            </div>
+            <div class="field">
+              <label class="label">Sort order</label>
+              <div class="select is-fullwidth">
+                <select name="sortOrder">
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="title">Title</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <label class="label">Article view</label>
+              <div class="select is-fullwidth">
+                <select name="articleView">
+                  <option value="adaptive">Adaptive</option>
+                  <option value="expanded">Expanded</option>
+                </select>
+              </div>
+            </div>
+            <button class="button is-primary">Save Preferences</button>
+          </form>
+        </div>
+
+        <div class="box glass-panel">
+          <h2 class="title is-5">OPML</h2>
+          <form action="/prefs/opml/import" method="post">
+            <div class="field">
+              <label class="label">Paste OPML</label>
+              <textarea class="textarea" name="opml" rows="8"></textarea>
+            </div>
+            <button class="button is-link">Import OPML</button>
+            <a class="button is-light" href="/prefs/opml/export">Export OPML</a>
+          </form>
+        </div>
+      </div>
+
+      <div class="column">
+        <div class="box glass-panel">
+          <h2 class="title is-5">Labels</h2>
+          <form action="/prefs/labels" method="post" class="mb-4">
+            <div class="field">
+              <input class="input" type="text" name="name" placeholder="Label name" required />
+            </div>
+            <div class="field">
+              <input class="input" type="color" name="color" value="#3273dc" />
+            </div>
+            <button class="button is-info">Create Label</button>
+          </form>
+          <% labels.forEach((label) => { %>
+            <span class="tag mr-2 mb-2" style="background:<%= label.color %>;color:#fff;"><%= label.name %></span>
+          <% }) %>
+        </div>
+
+        <div class="box glass-panel">
+          <h2 class="title is-5">Filters</h2>
+          <% if (previewResults) { %>
+            <div class="notification is-light mb-5">
+              <p class="has-text-weight-semibold">Preview Results</p>
+              <p class="mb-3">Scanned <%= previewResults.scannedCount %> articles and matched <%= previewResults.matchedCount %>.</p>
+              <% if (previewResults.matches.length === 0) { %>
+                <p>No articles matched this filter.</p>
+              <% } %>
+              <% previewResults.matches.forEach((result) => { %>
+                <article class="box mb-3">
+                  <p class="has-text-weight-semibold"><%= result.article.title %></p>
+                  <p class="is-size-7 mb-2"><%= result.article.feedId?.title || "Feed" %></p>
+                  <div class="tags">
+                    <% result.changes.forEach((change) => { %>
+                      <span class="tag <%= result.deleted ? 'is-danger is-light' : 'is-info is-light' %>"><%= change %></span>
+                    <% }) %>
+                  </div>
+                </article>
+              <% }) %>
+            </div>
+          <% } %>
+          <form action="/prefs/filters" method="post" data-filter-form>
+            <div class="field">
+              <input class="input" type="text" name="caption" placeholder="Filter caption" value="<%= filterDraft?.sourceFilterId ? '' : (filterDraft?.caption || '') %>" required />
+            </div>
+            <div class="field">
+              <label class="checkbox">
+                <input type="hidden" name="enabled" value="off" />
+                <input type="checkbox" name="enabled" value="on" <%= filterDraft?.sourceFilterId ? "checked" : (filterDraft ? (filterDraft.enabled ? "checked" : "") : "checked") %> />
+                <span class="ml-2">Enabled</span>
+              </label>
+            </div>
+            <div class="field">
+              <div class="select is-fullwidth">
+                <select name="ruleField">
+                  <option value="title" <%= !filterDraft || filterDraft.sourceFilterId ? "selected" : (filterDraft.ruleField === "title" ? "selected" : "") %>>Title</option>
+                  <option value="content" <%= filterDraft && !filterDraft.sourceFilterId && filterDraft.ruleField === "content" ? "selected" : "" %>>Content</option>
+                  <option value="author" <%= filterDraft && !filterDraft.sourceFilterId && filterDraft.ruleField === "author" ? "selected" : "" %>>Author</option>
+                  <option value="link" <%= filterDraft && !filterDraft.sourceFilterId && filterDraft.ruleField === "link" ? "selected" : "" %>>Link</option>
+                  <option value="tags" <%= filterDraft && !filterDraft.sourceFilterId && filterDraft.ruleField === "tags" ? "selected" : "" %>>Tags</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <input class="input" type="text" name="rulePattern" placeholder="Regex pattern" value="<%= filterDraft?.sourceFilterId ? '' : (filterDraft?.rulePattern || '') %>" required />
+            </div>
+            <div class="field">
+              <div class="select is-fullwidth">
+                <select name="actionType" data-action-type-select>
+                  <option value="markRead" <%= !filterDraft || filterDraft.sourceFilterId ? "selected" : (filterDraft.actionType === "markRead" ? "selected" : "") %>>Mark Read</option>
+                  <option value="star" <%= filterDraft && !filterDraft.sourceFilterId && filterDraft.actionType === "star" ? "selected" : "" %>>Star</option>
+                  <option value="publish" <%= filterDraft && !filterDraft.sourceFilterId && filterDraft.actionType === "publish" ? "selected" : "" %>>Publish</option>
+                  <option value="label" <%= filterDraft && !filterDraft.sourceFilterId && filterDraft.actionType === "label" ? "selected" : "" %>>Apply Label</option>
+                  <option value="tag" <%= filterDraft && !filterDraft.sourceFilterId && filterDraft.actionType === "tag" ? "selected" : "" %>>Assign Tag</option>
+                  <option value="score" <%= filterDraft && !filterDraft.sourceFilterId && filterDraft.actionType === "score" ? "selected" : "" %>>Adjust Score</option>
+                  <option value="delete" <%= filterDraft && !filterDraft.sourceFilterId && filterDraft.actionType === "delete" ? "selected" : "" %>>Delete</option>
+                </select>
+              </div>
+            </div>
+            <div class="field" data-action-value-field>
+              <label class="label">Action value</label>
+              <input class="input" type="text" name="actionValue" placeholder="Action value" value="<%= filterDraft?.sourceFilterId ? '' : (filterDraft?.actionValue || '') %>" />
+            </div>
+            <div class="field" data-label-action-field hidden>
+              <label class="label">Label</label>
+              <div class="select is-fullwidth">
+                <select name="labelActionValue">
+                  <option value="">Choose a label for label actions</option>
+                  <% labels.forEach((label) => { %>
+                    <option value="<%= label._id %>" <%= filterDraft && !filterDraft.sourceFilterId && String(filterDraft.labelActionValue || '') === String(label._id) ? "selected" : "" %>><%= label.name %></option>
+                  <% }) %>
+                </select>
+              </div>
+            </div>
+            <input type="hidden" name="matchMode" value="all" />
+            <div class="buttons">
+              <button class="button is-warning">Create Filter</button>
+              <button class="button is-light" type="submit" formaction="/prefs/filters/preview">Preview</button>
+            </div>
+          </form>
+          <hr />
+          <% filters.forEach((filter) => { %>
+            <details class="box mb-4 disclosure-panel" <%= filterDraft?.sourceFilterId && String(filterDraft.sourceFilterId) === String(filter._id) ? "open" : "" %>>
+              <summary class="disclosure-summary">
+                <div>
+                  <p class="has-text-weight-semibold">
+                    <%= filter.caption %>
+                    <span class="tag ml-2 <%= filter.enabled === false ? 'is-light' : 'is-success is-light' %>">
+                      <%= filter.enabled === false ? 'Disabled' : 'Enabled' %>
+                    </span>
+                  </p>
+                  <p class="is-size-7"><%= filter.rules[0]?.field %> matches <code><%= filter.rules[0]?.pattern %></code> and <strong><%= filter.actions[0]?.type %></strong></p>
+                </div>
+                <span class="button is-small is-light disclosure-button">Edit</span>
+              </summary>
+              <div class="disclosure-body">
+                <form action="/prefs/filters/<%= filter._id %>" method="post" data-filter-form>
+                  <input type="hidden" name="sourceFilterId" value="<%= filter._id %>" />
+                  <div class="field">
+                    <label class="label">Caption</label>
+                    <input class="input" type="text" name="caption" value="<%= filterDraft?.sourceFilterId && String(filterDraft.sourceFilterId) === String(filter._id) ? filterDraft.caption : filter.caption %>" required />
+                  </div>
+                  <div class="field">
+                    <label class="checkbox">
+                      <input type="hidden" name="enabled" value="off" />
+                      <input type="checkbox" name="enabled" value="on" <%= filterDraft?.sourceFilterId && String(filterDraft.sourceFilterId) === String(filter._id) ? (filterDraft.enabled ? "checked" : "") : (filter.enabled === false ? "" : "checked") %> />
+                      <span class="ml-2">Enabled</span>
+                    </label>
+                  </div>
+                  <div class="field">
+                    <label class="label">Match field</label>
+                    <div class="select is-fullwidth">
+                      <select name="ruleField">
+                        <option value="title" <%= (filterDraft?.sourceFilterId && String(filterDraft.sourceFilterId) === String(filter._id) ? filterDraft.ruleField : filter.rules[0]?.field) === "title" ? "selected" : "" %>>Title</option>
+                        <option value="content" <%= (filterDraft?.sourceFilterId && String(filterDraft.sourceFilterId) === String(filter._id) ? filterDraft.ruleField : filter.rules[0]?.field) === "content" ? "selected" : "" %>>Content</option>
+                        <option value="author" <%= (filterDraft?.sourceFilterId && String(filterDraft.sourceFilterId) === String(filter._id) ? filterDraft.ruleField : filter.rules[0]?.field) === "author" ? "selected" : "" %>>Author</option>
+                        <option value="link" <%= (filterDraft?.sourceFilterId && String(filterDraft.sourceFilterId) === String(filter._id) ? filterDraft.ruleField : filter.rules[0]?.field) === "link" ? "selected" : "" %>>Link</option>
+                        <option value="tags" <%= (filterDraft?.sourceFilterId && String(filterDraft.sourceFilterId) === String(filter._id) ? filterDraft.ruleField : filter.rules[0]?.field) === "tags" ? "selected" : "" %>>Tags</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label class="label">Regex pattern</label>
+                    <input class="input" type="text" name="rulePattern" value="<%= filterDraft?.sourceFilterId && String(filterDraft.sourceFilterId) === String(filter._id) ? filterDraft.rulePattern : filter.rules[0]?.pattern %>" required />
+                  </div>
+                  <div class="field">
+                    <label class="label">Action</label>
+                    <div class="select is-fullwidth">
+                      <select name="actionType" data-action-type-select>
+                        <% const currentActionType = filterDraft?.sourceFilterId && String(filterDraft.sourceFilterId) === String(filter._id) ? filterDraft.actionType : filter.actions[0]?.type; %>
+                        <option value="markRead" <%= currentActionType === "markRead" ? "selected" : "" %>>Mark Read</option>
+                        <option value="star" <%= currentActionType === "star" ? "selected" : "" %>>Star</option>
+                        <option value="publish" <%= currentActionType === "publish" ? "selected" : "" %>>Publish</option>
+                        <option value="label" <%= currentActionType === "label" ? "selected" : "" %>>Apply Label</option>
+                        <option value="tag" <%= currentActionType === "tag" ? "selected" : "" %>>Assign Tag</option>
+                        <option value="score" <%= currentActionType === "score" ? "selected" : "" %>>Adjust Score</option>
+                        <option value="delete" <%= currentActionType === "delete" ? "selected" : "" %>>Delete</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="field" data-action-value-field>
+                    <label class="label">Action value</label>
+                    <input class="input" type="text" name="actionValue" value="<%= filterDraft?.sourceFilterId && String(filterDraft.sourceFilterId) === String(filter._id) ? filterDraft.actionValue : (filter.actions[0]?.type === 'label' ? '' : (filter.actions[0]?.value || '')) %>" placeholder="Action value" />
+                  </div>
+                  <div class="field" data-label-action-field hidden>
+                    <label class="label">Label</label>
+                    <div class="select is-fullwidth">
+                      <select name="labelActionValue">
+                        <option value="">Choose a label for label actions</option>
+                        <% labels.forEach((label) => { %>
+                          <option value="<%= label._id %>" <%= String(filterDraft?.sourceFilterId && String(filterDraft.sourceFilterId) === String(filter._id) ? (filterDraft.labelActionValue || '') : (filter.actions[0]?.value || '')) === String(label._id) ? "selected" : "" %>><%= label.name %></option>
+                        <% }) %>
+                      </select>
+                    </div>
+                  </div>
+                  <input type="hidden" name="matchMode" value="<%= filter.matchMode || 'all' %>" />
+                  <div class="buttons">
+                    <button class="button is-primary">Save Filter</button>
+                    <button class="button is-light" type="submit" formaction="/prefs/filters/preview">Preview</button>
+                  </div>
+                </form>
+                <div class="buttons mt-3">
+                  <form action="/prefs/filters/<%= filter._id %>/toggle" method="post">
+                    <button class="button is-light"><%= filter.enabled === false ? 'Enable' : 'Disable' %></button>
+                  </form>
+                  <form action="/prefs/filters/<%= filter._id %>/delete" method="post" onsubmit="return confirm('Delete this filter?');">
+                    <button class="button is-danger is-light">Delete</button>
+                  </form>
+                </div>
+              </div>
+            </details>
+          <% }) %>
+        </div>
+      </div>
+
+      <div class="column">
+        <div class="box glass-panel">
+          <h2 class="title is-5">Generated Feeds</h2>
+          <form action="/prefs/generated-feeds" method="post">
+            <div class="field">
+              <div class="select is-fullwidth">
+                <select name="scope">
+                  <option value="special">Special</option>
+                  <option value="feed">Feed</option>
+                  <option value="label">Label</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <input class="input" type="text" name="targetId" placeholder="Target ID or starred" required />
+            </div>
+            <div class="field">
+              <div class="select is-fullwidth">
+                <select name="format">
+                  <option value="atom">Atom</option>
+                  <option value="json">JSON Feed</option>
+                </select>
+              </div>
+            </div>
+            <button class="button is-success">Create Generated Feed</button>
+          </form>
+          <hr />
+          <% generatedFeeds.forEach((item) => { %>
+            <p><a href="/public/feeds/<%= item.key %>"><%= item.title %></a></p>
+          <% }) %>
+        </div>
+
+        <div class="box glass-panel">
+          <h2 class="title is-5">Plugins</h2>
+          <% plugins.forEach((plugin) => { %>
+            <div class="media mb-3">
+              <div class="media-content">
+                <p class="has-text-weight-semibold"><%= plugin.name %></p>
+                <p class="is-size-7"><%= plugin.description %></p>
+              </div>
+              <div class="media-right">
+                <span class="tag <%= plugin.enabled ? 'is-success' : 'is-light' %>"><%= plugin.scope %></span>
+              </div>
+            </div>
+          <% }) %>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+<script>
+  (() => {
+    const forms = document.querySelectorAll("[data-filter-form]");
+    forms.forEach((form) => {
+      const actionSelect = form.querySelector("[data-action-type-select]");
+      const actionValueField = form.querySelector("[data-action-value-field]");
+      const actionValueInput = actionValueField?.querySelector("input[name='actionValue']");
+      const labelField = form.querySelector("[data-label-action-field]");
+      const labelSelect = labelField?.querySelector("select[name='labelActionValue']");
+
+      if (!actionSelect) return;
+
+      const updateVisibility = () => {
+        const value = actionSelect.value;
+        const needsActionValue = value === "tag" || value === "score";
+        const needsLabel = value === "label";
+
+        if (actionValueField) actionValueField.hidden = !needsActionValue;
+        if (labelField) labelField.hidden = !needsLabel;
+
+        if (actionValueInput) {
+          actionValueInput.disabled = !needsActionValue;
+          if (!needsActionValue && !form.action.includes("/prefs/filters/")) actionValueInput.value = "";
+        }
+
+        if (labelSelect) {
+          labelSelect.disabled = !needsLabel;
+          if (!needsLabel && !form.action.includes("/prefs/filters/")) labelSelect.value = "";
+        }
+      };
+
+      actionSelect.addEventListener("change", updateVisibility);
+      updateVisibility();
+    });
+  })();
+</script>
+<%- include("../partials/footer") %>

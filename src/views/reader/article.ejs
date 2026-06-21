@@ -1,0 +1,59 @@
+<%- include("../partials/head") %>
+<%- include("../partials/nav") %>
+<section class="section">
+  <div class="container is-max-desktop">
+    <div class="box glass-panel">
+      <div class="level is-mobile mb-4">
+        <div class="level-left">
+          <a class="button is-light" href="<%= backToListUrl %>">Back To List</a>
+        </div>
+        <div class="level-right">
+          <div class="buttons">
+            <a class="button is-light <%= previousArticle ? '' : 'is-static' %>" href="<%= previousArticle ? `/articles/${previousArticle._id}${viewQueryString}` : '#' %>">Previous</a>
+            <a class="button is-light <%= nextArticle ? '' : 'is-static' %>" href="<%= nextArticle ? `/articles/${nextArticle._id}${viewQueryString}` : '#' %>">Next</a>
+          </div>
+        </div>
+      </div>
+      <p class="heading"><%= article.feedId?.title || "Feed" %></p>
+      <h1 class="title"><%= article.title %></h1>
+      <p class="subtitle"><a href="<%= article.link %>" target="_blank" rel="noreferrer">Open original article</a></p>
+      <div class="tags">
+        <% (article.labelIds || []).forEach((label) => { %>
+          <span class="tag" style="background:<%= label.color %>;color:#fff;"><%= label.name %></span>
+          <form action="/articles/<%= article._id %>/labels/<%= label._id %>/remove" method="post" class="is-inline-block">
+            <button class="tag is-delete" aria-label="Remove label"></button>
+          </form>
+        <% }) %>
+      </div>
+      <form action="/articles/<%= article._id %>/labels" method="post" class="mb-4">
+        <div class="field has-addons">
+          <div class="control is-expanded">
+            <div class="select is-fullwidth">
+              <select name="labelId">
+                <% availableLabels.forEach((label) => { %>
+                  <option value="<%= label._id %>"><%= label.name %></option>
+                <% }) %>
+              </select>
+            </div>
+          </div>
+          <div class="control">
+            <button class="button is-info">Apply Label</button>
+          </div>
+        </div>
+      </form>
+      <div class="content article-body">
+        <%- article.content %>
+      </div>
+      <form action="/articles/<%= article._id %>/state" method="post">
+        <div class="field">
+          <label class="label">Note</label>
+          <div class="control">
+            <textarea class="textarea" name="note"><%= article.note %></textarea>
+          </div>
+        </div>
+        <button class="button is-primary">Save Note</button>
+      </form>
+    </div>
+  </div>
+</section>
+<%- include("../partials/footer") %>

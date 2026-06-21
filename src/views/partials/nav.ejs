@@ -1,0 +1,26 @@
+<nav class="navbar is-dark is-spaced app-nav">
+  <div class="navbar-brand">
+    <a class="navbar-item has-text-weight-bold" href="/"><%= appName %></a>
+  </div>
+  <div class="navbar-menu is-active">
+    <div class="navbar-start">
+      <% if (currentUser) { %>
+        <a class="navbar-item" href="/">Reader</a>
+        <a class="navbar-item" href="/prefs">Preferences</a>
+        <% if (currentUser.role === "admin") { %>
+          <a class="navbar-item" href="/admin">Admin</a>
+        <% } %>
+      <% } %>
+    </div>
+    <div class="navbar-end">
+      <% if (currentUser) { %>
+        <div class="navbar-item"><%= currentUser.displayName %></div>
+        <div class="navbar-item">
+          <form action="/logout" method="post">
+            <button class="button is-light">Log out</button>
+          </form>
+        </div>
+      <% } %>
+    </div>
+  </div>
+</nav>

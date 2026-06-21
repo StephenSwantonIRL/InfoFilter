@@ -1,0 +1,266 @@
+:root {
+  --app-radius: 16px;
+  --app-font: "Segoe UI", sans-serif;
+}
+
+body.theme-light {
+  --app-bg: #f5f7fb;
+  --app-bg-accent: #e9eef8;
+  --app-surface: #ffffff;
+  --app-surface-strong: #f8fafc;
+  --app-border: #d8e0ea;
+  --app-text: #1f2937;
+  --app-text-soft: #526071;
+  --app-nav: #ffffff;
+  --app-nav-text: #1f2937;
+  --app-accent: #2563eb;
+  --app-accent-soft: #dbeafe;
+  --app-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
+body.theme-dark {
+  --app-bg: #111827;
+  --app-bg-accent: #1f2937;
+  --app-surface: #18212f;
+  --app-surface-strong: #0f172a;
+  --app-border: #334155;
+  --app-text: #e5edf7;
+  --app-text-soft: #a8b6c8;
+  --app-nav: #0f172a;
+  --app-nav-text: #e5edf7;
+  --app-accent: #60a5fa;
+  --app-accent-soft: #1e3a5f;
+  --app-shadow: 0 16px 32px rgba(0, 0, 0, 0.3);
+}
+
+html,
+body {
+  min-height: 100%;
+  background: linear-gradient(180deg, var(--app-bg) 0%, var(--app-bg-accent) 100%);
+  color: var(--app-text);
+}
+
+body {
+  font-family: var(--app-font);
+}
+
+body,
+body .title,
+body .subtitle,
+body .label,
+body .content,
+body .table,
+body .panel,
+body .menu-list a,
+body .navbar-item,
+body .has-text-weight-semibold,
+body a {
+  color: var(--app-text);
+}
+
+body .subtitle,
+body .heading,
+body .is-size-7,
+body .help {
+  color: var(--app-text-soft) !important;
+}
+
+body .input,
+body .textarea,
+body .select select {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  background: var(--app-surface);
+  border-color: var(--app-border);
+  color: var(--app-text);
+  box-shadow: none;
+}
+
+body .input::placeholder,
+body .textarea::placeholder {
+  color: var(--app-text-soft);
+}
+
+body .box,
+body .card,
+body .panel,
+body .table,
+body .navbar-dropdown {
+  background: var(--app-surface);
+  color: var(--app-text);
+}
+
+body .table th,
+body .table td {
+  border-color: var(--app-border);
+  color: var(--app-text);
+}
+
+body .table thead td,
+body .table thead th {
+  color: var(--app-text-soft);
+}
+
+body .panel-block,
+body .panel-heading {
+  background: var(--app-surface);
+  border-color: var(--app-border);
+  color: var(--app-text);
+}
+
+body .panel-heading {
+  background: var(--app-surface-strong);
+}
+
+body .tag.is-light {
+  background: var(--app-surface-strong);
+  color: var(--app-text);
+}
+
+body .notification.is-light {
+  background: var(--app-surface-strong);
+  border: 1px solid var(--app-border);
+  color: var(--app-text);
+}
+
+body .notification.is-light p,
+body .notification.is-light .title,
+body .notification.is-light .subtitle,
+body .notification.is-light strong {
+  color: var(--app-text) !important;
+}
+
+body .notification.is-danger {
+  background: #fee2e2;
+  color: #7f1d1d;
+}
+
+body.theme-dark .notification.is-danger {
+  background: #4c1d1d;
+  color: #fecaca;
+}
+
+.app-nav {
+  background: var(--app-nav);
+  box-shadow: 0 1px 0 var(--app-border);
+}
+
+.app-nav .navbar-item,
+.app-nav .navbar-link,
+.app-nav .navbar-brand .navbar-item {
+  color: var(--app-nav-text);
+}
+
+.glass-panel,
+.reader-shell,
+.article-card {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  box-shadow: var(--app-shadow);
+}
+
+.glass-panel,
+.reader-shell,
+.article-card,
+.auth-hero .box {
+  border-radius: var(--app-radius);
+}
+
+.reader-shell {
+  background: color-mix(in srgb, var(--app-surface) 88%, transparent);
+}
+
+.article-card.is-unread {
+  border-left: 4px solid var(--app-accent);
+}
+
+.article-card .title a,
+.article-card a,
+.box a,
+.content a {
+  color: var(--app-accent);
+}
+
+.article-body img {
+  max-width: 100%;
+}
+
+.auth-hero {
+  background: linear-gradient(180deg, var(--app-bg) 0%, var(--app-bg-accent) 100%);
+}
+
+.auth-hero .box {
+  background: var(--app-surface);
+  box-shadow: var(--app-shadow);
+}
+
+.fixed-checkbox-list {
+  max-height: 10rem;
+  overflow: auto;
+  padding: 0.5rem 0.25rem;
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
+  background: var(--app-surface-strong);
+  box-sizing: border-box;
+}
+
+.disclosure-panel {
+  overflow: hidden;
+}
+
+.disclosure-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+  list-style: none;
+}
+
+.disclosure-summary::-webkit-details-marker {
+  display: none;
+}
+
+.disclosure-summary::marker {
+  display: none;
+}
+
+.disclosure-summary:focus,
+.disclosure-summary:focus-visible {
+  outline: none;
+}
+
+.disclosure-body {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--app-border);
+  overflow: hidden;
+}
+
+.disclosure-body form,
+.disclosure-body .field,
+.disclosure-body .control,
+.disclosure-body .select,
+.disclosure-body .fixed-checkbox-list {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.disclosure-button {
+  min-width: 5.5rem;
+}
+
+.disclosure-button::after {
+  content: " +";
+}
+
+details[open] .disclosure-button::after {
+  content: " -";
+}

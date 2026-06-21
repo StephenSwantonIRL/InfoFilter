@@ -1,0 +1,45 @@
+<%- include("../partials/head") %>
+<%- include("../partials/nav") %>
+<section class="section">
+  <div class="container">
+    <h1 class="title">Admin</h1>
+    <div class="columns">
+      <div class="column">
+        <div class="box glass-panel">
+          <p class="heading">Users</p>
+          <p class="title"><%= users.length %></p>
+        </div>
+      </div>
+      <div class="column">
+        <div class="box glass-panel">
+          <p class="heading">Feeds</p>
+          <p class="title"><%= feedCount %></p>
+        </div>
+      </div>
+      <div class="column">
+        <div class="box glass-panel">
+          <p class="heading">Articles</p>
+          <p class="title"><%= articleCount %></p>
+        </div>
+      </div>
+    </div>
+    <div class="box glass-panel">
+      <h2 class="title is-5">Accounts</h2>
+      <table class="table is-fullwidth">
+        <thead>
+          <tr><th>Name</th><th>Email</th><th>Role</th></tr>
+        </thead>
+        <tbody>
+          <% users.forEach((user) => { %>
+            <tr>
+              <td><%= user.displayName %></td>
+              <td><%= user.email %></td>
+              <td><%= user.role %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+<%- include("../partials/footer") %>
