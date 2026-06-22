@@ -1,9 +1,9 @@
-const cron = require("node-cron");
 const User = require("../models/User");
 const Label = require("../models/Label");
 const Plugin = require("../models/Plugin");
+const Feed = require("../models/Feed");
 const env = require("../config/env");
-const { refreshAllFeedsForUser } = require("./feedService");
+const { refreshFeed } = require("./feedService");
 
 async function ensureAdminUser() {
   const existing = await User.findOne({ email: env.adminEmail.toLowerCase() });
@@ -38,12 +38,27 @@ async function ensureDefaults() {
 }
 
 function scheduleUpdater() {
-  cron.schedule(env.updateSchedule, async () => {
-    const users = await User.find();
-    for (const user of users) {
-      await refreshAllFeedsForUser(user._id);
+  setInterval(async () => {
+    const now = new Date();
+    const dueFeeds = await Feed.find({
+      $or: [
+        { nextRefreshAt: null },
+        { nextRefreshAt: { $lte: now } }
+      ]
+    });
+
+    for (const feed of dueFeeds) {
+      try {
+        await refreshFeed(feed);
+      } catch (error) {
+        feed.lastError = error.message;
+        const retryAt = new Date();
+        retryAt.setMinutes(retryAt.getMinutes() + env.minRefreshMinutes);
+        feed.nextRefreshAt = retryAt;
+        await feed.save();
+      }
     }
-  });
+  }, env.refreshSweepMs);
 }
 
 module.exports = {

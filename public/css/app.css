@@ -205,6 +205,38 @@ body.theme-dark .notification.is-danger {
   box-sizing: border-box;
 }
 
+.reader-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.reader-header-copy {
+  flex: 1 1 28rem;
+  min-width: 0;
+}
+
+.reader-header-copy .title,
+.reader-header-copy .subtitle {
+  overflow-wrap: anywhere;
+}
+
+.reader-header-actions {
+  flex: 0 1 auto;
+  max-width: 100%;
+}
+
+.reader-header-actions .buttons {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.reader-header-actions form {
+  margin-bottom: 0.5rem;
+}
+
 .disclosure-panel {
   overflow: hidden;
 }

@@ -256,6 +256,239 @@
 
       <div class="column">
         <div class="box glass-panel">
+          <h2 class="title is-5">AI Sources</h2>
+          <p class="is-size-7 mb-4">Turn a page without an official feed into a verified, repairable source.</p>
+          <% if (aiSourceError) { %>
+            <div class="notification is-danger is-light mb-4"><%= aiSourceError %></div>
+          <% } %>
+          <% if (!hasOpenAIConfig) { %>
+            <div class="notification is-light mb-4">
+              Add `OPENAI_API_KEY` to your environment to enable AI source setup.
+            </div>
+          <% } %>
+          <form action="/prefs/ai-sources/preview" method="post">
+            <div class="field">
+              <label class="label">Feed title</label>
+              <input class="input" type="text" name="title" value="<%= aiSourceDraft?.feedId ? '' : (aiSourceDraft?.title || '') %>" placeholder="Optional title override" />
+            </div>
+            <div class="field">
+              <label class="label">Source URL</label>
+              <input class="input" type="url" name="sourceUrl" value="<%= aiSourceDraft?.sourceUrl || '' %>" placeholder="https://example.com/latest" required />
+            </div>
+            <div class="field">
+              <label class="label">Guidance</label>
+              <textarea class="textarea" name="guidance" rows="3" placeholder="Tell the AI what to include or ignore."><%= aiSourceDraft?.guidance || '' %></textarea>
+            </div>
+            <div class="field">
+              <label class="label">Fetch mode</label>
+              <div class="select is-fullwidth">
+                <select name="fetchMode">
+                  <option value="auto" <%= (aiSourceDraft?.fetchMode || 'auto') === "auto" ? "selected" : "" %>>Auto</option>
+                  <option value="direct" <%= aiSourceDraft?.fetchMode === "direct" ? "selected" : "" %>>Direct fetch only</option>
+                  <option value="browser" <%= aiSourceDraft?.fetchMode === "browser" ? "selected" : "" %>>Browser-rendered</option>
+                </select>
+              </div>
+              <p class="help">Use browser-rendered mode for JS-heavy or bot-protected pages.</p>
+            </div>
+            <div class="field">
+              <label class="label">Browser wait strategy</label>
+              <div class="select is-fullwidth">
+                <select name="waitUntil">
+                  <option value="networkidle" <%= (aiSourceDraft?.waitUntil || 'networkidle') === "networkidle" ? "selected" : "" %>>Network idle</option>
+                  <option value="load" <%= aiSourceDraft?.waitUntil === "load" ? "selected" : "" %>>Page load</option>
+                  <option value="domcontentloaded" <%= aiSourceDraft?.waitUntil === "domcontentloaded" ? "selected" : "" %>>DOM content loaded</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <label class="label">Wait for selector</label>
+              <input class="input" type="text" name="waitForSelector" value="<%= aiSourceDraft?.waitForSelector || '' %>" placeholder=".stream-item, article, [data-content-type='article']" />
+            </div>
+            <div class="field">
+              <label class="label">Extra wait after load (ms)</label>
+              <input class="input" type="number" name="waitAfterLoadMs" min="0" step="100" value="<%= aiSourceDraft?.waitAfterLoadMs || 1500 %>" />
+            </div>
+            <div class="field">
+              <label class="label">Folders</label>
+              <div class="fixed-checkbox-list">
+                <% if (categories.length === 0) { %>
+                  <p class="is-size-7">No folders yet. This source can still be created without one.</p>
+                <% } %>
+                <% categories.forEach((category) => { %>
+                  <label class="checkbox is-block mb-2">
+                    <input type="checkbox" name="categoryIds" value="<%= category._id %>" <%= aiSourceDraft?.categoryIds?.includes(String(category._id)) ? "checked" : "" %> />
+                    <span class="ml-2"><%= category.name %></span>
+                  </label>
+                <% }) %>
+              </div>
+            </div>
+            <% if (aiSourceDraft?.feedId) { %>
+              <input type="hidden" name="feedId" value="<%= aiSourceDraft.feedId %>" />
+            <% } %>
+            <div class="buttons">
+              <button class="button is-primary">Generate Preview</button>
+              <% if (aiSourceDraft?.sourceUrl) { %>
+                <a class="button is-light" href="/prefs/ai-sources/debug-source" target="_blank" rel="noreferrer">Open Fetched Source</a>
+              <% } %>
+            </div>
+          </form>
+
+          <% if (aiSourceDraft?.candidate) { %>
+            <hr />
+            <h3 class="title is-6">Verify Extracted Items</h3>
+            <p class="is-size-7 mb-3">Confirm these are the items you want before the source is saved.</p>
+            <div class="notification is-light mb-4">
+              <p class="has-text-weight-semibold"><%= aiSourceDraft.candidate.feedTitle %></p>
+              <p class="is-size-7"><%= aiSourceDraft.candidate.notes %></p>
+              <p class="is-size-7 mt-2">Resolved fetch mode: <strong><%= aiSourceDraft.candidate.resolvedFetchMode || aiSourceDraft.fetchMode || 'auto' %></strong></p>
+            </div>
+            <% aiSourceDraft.candidate.previewItems.forEach((item) => { %>
+              <article class="box mb-3">
+                <p class="has-text-weight-semibold"><a href="<%= item.link %>" target="_blank" rel="noreferrer"><%= item.title %></a></p>
+                <% if (item.publishedAt) { %><p class="is-size-7"><%= item.publishedAt %></p><% } %>
+                <% if (item.summary) { %><p class="is-size-7 mt-2"><%= item.summary %></p><% } %>
+              </article>
+            <% }) %>
+            <div class="buttons">
+              <form action="/prefs/ai-sources/confirm" method="post">
+                <button class="button is-success">Confirm Source</button>
+              </form>
+              <form action="/prefs/ai-sources/discard" method="post">
+                <button class="button is-light">Discard</button>
+              </form>
+            </div>
+            <p class="is-size-7 mt-2">Need a different set of items? Adjust the guidance above and generate another preview.</p>
+          <% } %>
+
+          <% if (aiSourceDraft?.debug) { %>
+            <hr />
+            <h3 class="title is-6">Rendered Page Debug</h3>
+            <p class="is-size-7 mb-3">Use this to refine guidance, switch fetch mode, or add a selector to wait for before the preview runs.</p>
+            <div class="box is-shadowless has-background-light debug-panel">
+              <div class="content is-small">
+                <p><strong>Page title:</strong> <%= aiSourceDraft.debug.pageTitle %></p>
+                <p><strong>Requested mode:</strong> <%= aiSourceDraft.debug.requestedFetchMode %> | <strong>Resolved mode:</strong> <%= aiSourceDraft.debug.resolvedFetchMode %></p>
+                <% if (aiSourceDraft.debug.generationModel) { %>
+                  <p><strong>Rule model:</strong> <%= aiSourceDraft.debug.generationModel %><% if (aiSourceDraft.debug.generationFallbackUsed) { %> (fallback used)<% } %></p>
+                <% } %>
+                <% if (aiSourceDraft.debug.generationAttemptedModels?.length) { %>
+                  <p><strong>Attempted models:</strong> <%= aiSourceDraft.debug.generationAttemptedModels.join(", ") %></p>
+                <% } %>
+                <p><strong>Final URL:</strong> <a href="<%= aiSourceDraft.debug.finalUrl %>" target="_blank" rel="noreferrer"><%= aiSourceDraft.debug.finalUrl %></a></p>
+                <p><strong>Wait strategy:</strong> <%= aiSourceDraft.debug.waitUntil %><% if (aiSourceDraft.debug.waitForSelector) { %> | <strong>Wait selector:</strong> <code><%= aiSourceDraft.debug.waitForSelector %></code><% } %> | <strong>Extra wait:</strong> <%= aiSourceDraft.debug.waitAfterLoadMs %>ms</p>
+                <p><strong>Element counts:</strong> <%= aiSourceDraft.debug.selectorCounts.article %> article tags, <%= aiSourceDraft.debug.selectorCounts.links %> links, <%= aiSourceDraft.debug.selectorCounts.headings %> headings</p>
+              </div>
+
+              <% if (aiSourceDraft.debug.candidateRule) { %>
+                <div class="content is-small mt-4">
+                  <p class="has-text-weight-semibold">Candidate rule</p>
+                  <pre><%= JSON.stringify(aiSourceDraft.debug.candidateRule, null, 2) %></pre>
+                  <p class="mt-3"><strong>Rule match counts:</strong></p>
+                  <pre><%= JSON.stringify(aiSourceDraft.debug.candidateMatchCounts, null, 2) %></pre>
+                  <% if (aiSourceDraft.debug.firstItemPreview) { %>
+                    <p class="mt-3"><strong>First matched item preview:</strong></p>
+                    <pre><%= JSON.stringify(aiSourceDraft.debug.firstItemPreview, null, 2) %></pre>
+                  <% } %>
+                </div>
+              <% } %>
+
+              <% if (aiSourceDraft.debug.containerSamples?.length) { %>
+                <div class="content is-small mt-4">
+                  <p class="has-text-weight-semibold">Possible article containers</p>
+                  <% aiSourceDraft.debug.containerSamples.forEach((sample) => { %>
+                    <article class="box mb-3">
+                      <p class="is-size-7 mb-1"><code><%= sample.selector %></code></p>
+                      <% if (sample.href) { %>
+                        <p class="mb-1"><a href="<%= sample.href %>" target="_blank" rel="noreferrer"><%= sample.href %></a></p>
+                      <% } %>
+                      <p class="is-size-7"><%= sample.text %></p>
+                    </article>
+                  <% }) %>
+                </div>
+              <% } %>
+
+              <% if (aiSourceDraft.debug.topLinks?.length) { %>
+                <div class="content is-small mt-4">
+                  <p class="has-text-weight-semibold">Sample links found on the page</p>
+                  <% aiSourceDraft.debug.topLinks.forEach((link) => { %>
+                    <p class="mb-2">
+                      <a href="<%= link.href %>" target="_blank" rel="noreferrer"><%= link.text %></a>
+                    </p>
+                  <% }) %>
+                </div>
+              <% } %>
+
+              <% if (aiSourceDraft.debug.bodyTextSnippet) { %>
+                <div class="content is-small mt-4">
+                  <p class="has-text-weight-semibold">Rendered text snippet</p>
+                  <pre><%= aiSourceDraft.debug.bodyTextSnippet %></pre>
+                </div>
+              <% } %>
+            </div>
+          <% } %>
+
+          <% if (aiSources.length > 0) { %>
+            <hr />
+            <h3 class="title is-6">Existing AI Sources</h3>
+            <% aiSources.forEach((source) => { %>
+              <details class="box mb-3 disclosure-panel">
+                <summary class="disclosure-summary">
+                  <div>
+                    <p class="has-text-weight-semibold"><%= source.title %></p>
+                    <p class="is-size-7"><%= source.feedUrl %></p>
+                  </div>
+                  <span class="tag <%= source.aiConfig?.verificationStatus === 'failed' ? 'is-danger is-light' : 'is-success is-light' %>">
+                    <%= source.aiConfig?.verificationStatus || 'verified' %>
+                  </span>
+                </summary>
+                <div class="disclosure-body">
+                  <p class="is-size-7 mb-3">Guidance: <%= source.aiConfig?.guidance || "None" %></p>
+                  <p class="is-size-7 mb-3">Fetch mode: <strong><%= source.aiConfig?.fetchMode || "auto" %></strong><% if (source.aiConfig?.lastResolvedFetchMode) { %> (last used: <%= source.aiConfig.lastResolvedFetchMode %>)<% } %></p>
+                  <% if (source.aiConfig?.lastRepairReason) { %>
+                    <p class="is-size-7 mb-3">Last repair: <%= source.aiConfig.lastRepairReason %></p>
+                  <% } %>
+                  <form action="/feeds/<%= source._id %>/ai-repair" method="post">
+                    <div class="field">
+                      <label class="label">Repair guidance</label>
+                      <textarea class="textarea" name="guidance" rows="2"><%= source.aiConfig?.guidance || "" %></textarea>
+                    </div>
+                    <div class="field">
+                      <label class="label">Fetch mode</label>
+                      <div class="select is-fullwidth">
+                        <select name="fetchMode">
+                          <option value="auto" <%= (source.aiConfig?.fetchMode || 'auto') === "auto" ? "selected" : "" %>>Auto</option>
+                          <option value="direct" <%= source.aiConfig?.fetchMode === "direct" ? "selected" : "" %>>Direct fetch only</option>
+                          <option value="browser" <%= source.aiConfig?.fetchMode === "browser" ? "selected" : "" %>>Browser-rendered</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div class="field">
+                      <label class="label">Wait strategy</label>
+                      <div class="select is-fullwidth">
+                        <select name="waitUntil">
+                          <option value="networkidle" <%= (source.aiConfig?.waitUntil || 'networkidle') === "networkidle" ? "selected" : "" %>>Network idle</option>
+                          <option value="load" <%= source.aiConfig?.waitUntil === "load" ? "selected" : "" %>>Page load</option>
+                          <option value="domcontentloaded" <%= source.aiConfig?.waitUntil === "domcontentloaded" ? "selected" : "" %>>DOM content loaded</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div class="field">
+                      <label class="label">Wait for selector</label>
+                      <input class="input" type="text" name="waitForSelector" value="<%= source.aiConfig?.waitForSelector || '' %>" />
+                    </div>
+                    <div class="field">
+                      <label class="label">Extra wait after load (ms)</label>
+                      <input class="input" type="number" name="waitAfterLoadMs" min="0" step="100" value="<%= source.aiConfig?.waitAfterLoadMs || 1500 %>" />
+                    </div>
+                    <button class="button is-light">Generate Repair Preview</button>
+                  </form>
+                </div>
+              </details>
+            <% }) %>
+          <% } %>
+        </div>
+
+        <div class="box glass-panel">
           <h2 class="title is-5">Generated Feeds</h2>
           <form action="/prefs/generated-feeds" method="post">
             <div class="field">

@@ -1,0 +1,52 @@
+<%- include("../partials/head") %>
+<section class="section">
+  <div class="container is-fluid">
+    <div class="box glass-panel">
+      <div class="level is-mobile mb-4">
+        <div class="level-left">
+          <div>
+            <h1 class="title is-4 mb-2">Fetched Source Debug</h1>
+            <p class="is-size-7">
+              <strong>Requested mode:</strong> <%= requestedFetchMode %>
+              |
+              <strong>Resolved mode:</strong> <%= resolvedFetchMode %>
+              |
+              <strong>Wait:</strong> <%= waitUntil %>
+              <% if (waitForSelector) { %>
+                |
+                <strong>Selector:</strong> <code><%= waitForSelector %></code>
+              <% } %>
+              |
+              <strong>Extra wait:</strong> <%= waitAfterLoadMs %>ms
+            </p>
+          </div>
+        </div>
+        <div class="level-right">
+          <a class="button is-light" href="/prefs">Back to Preferences</a>
+        </div>
+      </div>
+
+      <div class="content is-small mb-4">
+        <p><strong>Source URL:</strong> <a href="<%= sourceUrl %>" target="_blank" rel="noreferrer"><%= sourceUrl %></a></p>
+        <p><strong>Final URL:</strong> <a href="<%= finalUrl %>" target="_blank" rel="noreferrer"><%= finalUrl %></a></p>
+      </div>
+
+      <pre class="debug-source-view"><%= fetchedHtml %></pre>
+    </div>
+  </div>
+</section>
+<style>
+  .debug-source-view {
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: none;
+    overflow: auto;
+    padding: 1.25rem;
+    border-radius: 1rem;
+    background: var(--panel-muted);
+    color: var(--text-primary);
+    font-size: 0.82rem;
+    line-height: 1.45;
+  }
+</style>
+<%- include("../partials/footer") %>

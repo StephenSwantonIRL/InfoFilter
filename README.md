@@ -6,6 +6,7 @@ InfoFilter is a Tiny Tiny RSS-inspired feed reader and aggregator built with Nod
 
 - Session-based authentication with admin and user roles
 - Feed subscriptions with categories/folders
+- AI-generated scraper rules for sources without official feeds, including preview verification and repair fallback
 - Article import, unread/starred/published/archive state, notes, and tags
 - Regex-driven content filters with tag, score, read, publish, delete, and label actions
 - Labels and generated public feeds in Atom or JSON Feed format
@@ -22,6 +23,12 @@ InfoFilter is a Tiny Tiny RSS-inspired feed reader and aggregator built with Nod
 4. Seed the default admin account with `npm run seed`.
 5. Start the app with `npm run dev`.
 
+Optional for AI sources:
+
+- Set `OPENAI_API_KEY` in `.env`
+- Optionally set `OPENAI_MODEL` if you do not want the default
+- Install browser support with `npm install` so Playwright is available for rendered-source fetching
+
 Default login comes from `.env`:
 
 - Email: `ADMIN_EMAIL`
@@ -32,6 +39,10 @@ Default login comes from `.env`:
 - This project recreates a large amount of tt-rss behavior, but it is still a greenfield Node/Mongo implementation rather than a line-by-line port.
 - Feed updates rely on `rss-parser`, so some edge-case feeds may need adapter or plugin work for parity with upstream tt-rss.
 - Public generated feeds are exposed at `/public/feeds/:key`.
+- AI sources are created from `Preferences > AI Sources`. The app proposes deterministic selectors, shows a verification preview, and only saves the source after you confirm the extracted items.
+- AI sources support `auto`, `direct`, and `browser-rendered` fetch modes. Use browser mode for JS-heavy or bot-protected sites, and optionally provide a selector to wait for before previewing.
+- AI rule generation supports a primary model plus fallback models via `OPENAI_MODEL` and `OPENAI_FALLBACK_MODELS`.
+- If a generated rule returns no preview items, the AI Sources panel now shows rendered-page debug details, including candidate containers, sample links, and rule match counts to help refine guidance or wait settings.
 
 ## Source inspiration
 

@@ -80,8 +80,8 @@
 
     <div class="column is-9">
       <div class="box reader-shell">
-        <div class="level">
-          <div class="level-left">
+        <div class="reader-header">
+          <div class="reader-header-copy">
             <div>
               <h1 class="title is-4 mb-1"><%= selectedCategory ? selectedCategory.name : (selectedSpecial === "starred" ? "Starred Articles" : (selectedFeed ? selectedFeed.title : "Latest Articles")) %></h1>
               <p class="subtitle is-6">
@@ -89,10 +89,18 @@
               </p>
             </div>
           </div>
-          <div class="level-right">
+          <div class="reader-header-actions">
             <% if (selectedFeed) { %>
               <div class="buttons">
                 <a class="button is-light" href="/<%= toggleUnreadViewQueryString %>"><%= unreadOnly ? 'Show All' : 'Unread Only' %></a>
+                <form action="/articles/mark-all-read" method="post">
+                  <input type="hidden" name="feed" value="<%= selectedFeedId || '' %>" />
+                  <input type="hidden" name="label" value="<%= selectedLabelId || '' %>" />
+                  <input type="hidden" name="special" value="<%= selectedSpecial || '' %>" />
+                  <input type="hidden" name="category" value="<%= selectedCategoryId || '' %>" />
+                  <input type="hidden" name="unread" value="<%= unreadOnly ? '1' : '0' %>" />
+                  <button class="button is-light">Mark All Read</button>
+                </form>
                 <form action="/feeds/<%= selectedFeed._id %>/refresh" method="post">
                   <button class="button is-link is-light">Refresh Feed</button>
                 </form>
@@ -100,21 +108,53 @@
             <% } else if (selectedCategory) { %>
               <div class="buttons">
                 <a class="button is-light" href="/<%= toggleUnreadViewQueryString %>"><%= unreadOnly ? 'Show All' : 'Unread Only' %></a>
+                <form action="/articles/mark-all-read" method="post">
+                  <input type="hidden" name="feed" value="<%= selectedFeedId || '' %>" />
+                  <input type="hidden" name="label" value="<%= selectedLabelId || '' %>" />
+                  <input type="hidden" name="special" value="<%= selectedSpecial || '' %>" />
+                  <input type="hidden" name="category" value="<%= selectedCategoryId || '' %>" />
+                  <input type="hidden" name="unread" value="<%= unreadOnly ? '1' : '0' %>" />
+                  <button class="button is-light">Mark All Read</button>
+                </form>
                 <span class="tag is-link is-medium"><%= selectedCategory.name %></span>
               </div>
             <% } else if (selectedSpecial === "starred") { %>
               <div class="buttons">
                 <a class="button is-light" href="/<%= toggleUnreadViewQueryString %>"><%= unreadOnly ? 'Show All' : 'Unread Only' %></a>
+                <form action="/articles/mark-all-read" method="post">
+                  <input type="hidden" name="feed" value="<%= selectedFeedId || '' %>" />
+                  <input type="hidden" name="label" value="<%= selectedLabelId || '' %>" />
+                  <input type="hidden" name="special" value="<%= selectedSpecial || '' %>" />
+                  <input type="hidden" name="category" value="<%= selectedCategoryId || '' %>" />
+                  <input type="hidden" name="unread" value="<%= unreadOnly ? '1' : '0' %>" />
+                  <button class="button is-light">Mark All Read</button>
+                </form>
                 <span class="tag is-warning is-medium">Starred</span>
               </div>
             <% } else if (selectedLabel) { %>
               <div class="buttons">
                 <a class="button is-light" href="/<%= toggleUnreadViewQueryString %>"><%= unreadOnly ? 'Show All' : 'Unread Only' %></a>
+                <form action="/articles/mark-all-read" method="post">
+                  <input type="hidden" name="feed" value="<%= selectedFeedId || '' %>" />
+                  <input type="hidden" name="label" value="<%= selectedLabelId || '' %>" />
+                  <input type="hidden" name="special" value="<%= selectedSpecial || '' %>" />
+                  <input type="hidden" name="category" value="<%= selectedCategoryId || '' %>" />
+                  <input type="hidden" name="unread" value="<%= unreadOnly ? '1' : '0' %>" />
+                  <button class="button is-light">Mark All Read</button>
+                </form>
                 <span class="tag is-medium" style="background:<%= selectedLabel.color %>;color:#fff;"><%= selectedLabel.name %></span>
               </div>
             <% } else { %>
               <div class="buttons is-align-items-center">
                 <a class="button is-light" href="/<%= toggleUnreadViewQueryString %>"><%= unreadOnly ? 'Show All' : 'Unread Only' %></a>
+                <form action="/articles/mark-all-read" method="post">
+                  <input type="hidden" name="feed" value="<%= selectedFeedId || '' %>" />
+                  <input type="hidden" name="label" value="<%= selectedLabelId || '' %>" />
+                  <input type="hidden" name="special" value="<%= selectedSpecial || '' %>" />
+                  <input type="hidden" name="category" value="<%= selectedCategoryId || '' %>" />
+                  <input type="hidden" name="unread" value="<%= unreadOnly ? '1' : '0' %>" />
+                  <button class="button is-light">Mark All Read</button>
+                </form>
                 <div class="tags mb-0">
                   <% labels.forEach((label) => { %>
                     <span class="tag" style="background:<%= label.color %>;color:#fff;"><%= label.name %></span>
@@ -155,6 +195,47 @@
                   <label class="label">Site URL</label>
                   <input class="input" type="url" name="siteUrl" value="<%= selectedFeed.siteUrl %>" />
                 </div>
+                <% if (selectedFeed.sourceType === "ai_scraped") { %>
+                  <div class="field">
+                    <label class="label">AI guidance</label>
+                    <textarea class="textarea" name="aiGuidance" rows="3"><%= selectedFeed.aiConfig?.guidance || "" %></textarea>
+                  </div>
+                  <div class="field">
+                    <label class="label">Fetch mode</label>
+                    <div class="select is-fullwidth">
+                      <select name="aiFetchMode">
+                        <option value="auto" <%= (selectedFeed.aiConfig?.fetchMode || 'auto') === "auto" ? "selected" : "" %>>Auto</option>
+                        <option value="direct" <%= selectedFeed.aiConfig?.fetchMode === "direct" ? "selected" : "" %>>Direct fetch only</option>
+                        <option value="browser" <%= selectedFeed.aiConfig?.fetchMode === "browser" ? "selected" : "" %>>Browser-rendered</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label class="label">Wait strategy</label>
+                    <div class="select is-fullwidth">
+                      <select name="aiWaitUntil">
+                        <option value="networkidle" <%= (selectedFeed.aiConfig?.waitUntil || 'networkidle') === "networkidle" ? "selected" : "" %>>Network idle</option>
+                        <option value="load" <%= selectedFeed.aiConfig?.waitUntil === "load" ? "selected" : "" %>>Page load</option>
+                        <option value="domcontentloaded" <%= selectedFeed.aiConfig?.waitUntil === "domcontentloaded" ? "selected" : "" %>>DOM content loaded</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label class="label">Wait for selector</label>
+                    <input class="input" type="text" name="aiWaitForSelector" value="<%= selectedFeed.aiConfig?.waitForSelector || '' %>" />
+                  </div>
+                  <div class="field">
+                    <label class="label">Extra wait after load (ms)</label>
+                    <input class="input" type="number" name="aiWaitAfterLoadMs" min="0" step="100" value="<%= selectedFeed.aiConfig?.waitAfterLoadMs || 1500 %>" />
+                  </div>
+                  <div class="notification is-light mb-4">
+                    <p class="has-text-weight-semibold">AI-generated source</p>
+                    <p class="is-size-7">This feed uses a verified scraper rule instead of RSS. If the source layout changes, you can trigger a repair preview from Preferences.</p>
+                    <% if (selectedFeed.aiConfig?.lastResolvedFetchMode) { %>
+                      <p class="is-size-7 mt-2">Last successful fetch mode: <strong><%= selectedFeed.aiConfig.lastResolvedFetchMode %></strong></p>
+                    <% } %>
+                  </div>
+                <% } %>
                 <div class="field">
                   <label class="label">Folders</label>
                   <div class="fixed-checkbox-list">

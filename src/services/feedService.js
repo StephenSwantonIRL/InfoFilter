@@ -4,6 +4,8 @@ const Feed = require("../models/Feed");
 const Filter = require("../models/Filter");
 const Article = require("../models/Article");
 const { applyFilters } = require("./filterService");
+const { fetchSourceHtml, extractItemsWithRule, generateScraperCandidate } = require("./aiScraperService");
+const env = require("../config/env");
 
 const parser = new Parser({
   customFields: {
@@ -17,6 +19,18 @@ function deriveGuid(item) {
 
 function createKey(length = 32) {
   return crypto.randomBytes(length).toString("base64url").slice(0, length);
+}
+
+function getRandomRefreshMinutes() {
+  const min = Math.max(1, Math.min(env.minRefreshMinutes, env.maxRefreshMinutes));
+  const max = Math.max(min, Math.max(env.minRefreshMinutes, env.maxRefreshMinutes));
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function computeNextRefreshAt() {
+  const next = new Date();
+  next.setMinutes(next.getMinutes() + getRandomRefreshMinutes());
+  return next;
 }
 
 function mapItemToArticle(userId, feed, item) {
@@ -43,7 +57,43 @@ function mapItemToArticle(userId, feed, item) {
   };
 }
 
-async function createFeed({ userId, title, feedUrl, siteUrl = "", categoryId = null, categoryIds = [] }) {
+function mapAiItemToArticle(userId, feed, item) {
+  const parsedPublishedAt = item.publishedAt ? new Date(item.publishedAt) : new Date();
+  const publishedAt = Number.isNaN(parsedPublishedAt.getTime()) ? new Date() : parsedPublishedAt;
+
+  return {
+    userId,
+    feedId: feed._id,
+    guid: item.link || `${item.title}-${publishedAt.toISOString()}`,
+    title: item.title || "Untitled",
+    link: item.link || "",
+    author: "",
+    content: item.summary || "",
+    summary: item.summary || "",
+    tags: [],
+    labelIds: [],
+    score: 0,
+    publishedAt,
+    importedAt: new Date(),
+    updatedAtFeed: publishedAt,
+    isRead: false,
+    isStarred: false,
+    isPublished: false,
+    isArchived: false,
+    note: ""
+  };
+}
+
+async function createFeed({
+  userId,
+  title,
+  feedUrl,
+  siteUrl = "",
+  categoryId = null,
+  categoryIds = [],
+  sourceType = "rss",
+  aiConfig = null
+}) {
   const normalizedCategoryIds = (categoryIds.length ? categoryIds : [categoryId])
     .filter(Boolean);
   const createdFeed = await Feed.create({
@@ -51,21 +101,23 @@ async function createFeed({ userId, title, feedUrl, siteUrl = "", categoryId = n
     title,
     feedUrl,
     siteUrl,
+    sourceType,
     categoryId,
     categoryIds: normalizedCategoryIds,
-    generatedFeedKey: createKey(32)
+    aiConfig,
+    generatedFeedKey: createKey(32),
+    nextRefreshAt: computeNextRefreshAt()
   });
 
   return createdFeed;
 }
 
-async function refreshFeed(feed) {
-  const parsed = await parser.parseURL(feed.feedUrl);
+async function importArticles(feed, items, mapItem) {
   const filters = await Filter.find({ userId: feed.userId }).lean();
   let importedCount = 0;
 
-  for (const item of parsed.items || []) {
-    const candidate = mapItemToArticle(feed.userId, feed, item);
+  for (const item of items) {
+    const candidate = mapItem(feed.userId, feed, item);
     const { article, deleted } = await applyFilters(filters, candidate);
     if (deleted) continue;
 
@@ -77,13 +129,103 @@ async function refreshFeed(feed) {
     importedCount += 1;
   }
 
+  return importedCount;
+}
+
+async function refreshRssFeed(feed) {
+  const parsed = await parser.parseURL(feed.feedUrl);
+  const importedCount = await importArticles(feed, parsed.items || [], mapItemToArticle);
+
   feed.title = parsed.title || feed.title;
   feed.siteUrl = parsed.link || feed.siteUrl;
   feed.lastError = "";
   feed.lastUpdatedAt = new Date();
+  feed.nextRefreshAt = computeNextRefreshAt();
   await feed.save();
 
   return { importedCount, title: feed.title };
+}
+
+async function repairAiFeedRule(feed, reason) {
+  const candidate = await generateScraperCandidate({
+    url: feed.feedUrl,
+    guidance: feed.aiConfig?.guidance || "",
+    previousRule: feed.aiConfig?.rule || null,
+    repairReason: reason,
+    fetchMode: feed.aiConfig?.fetchMode || "auto",
+    waitUntil: feed.aiConfig?.waitUntil || "networkidle",
+    waitForSelector: feed.aiConfig?.waitForSelector || "",
+    waitAfterLoadMs: feed.aiConfig?.waitAfterLoadMs || 1500
+  });
+
+  feed.title = candidate.feedTitle || feed.title;
+  feed.siteUrl = candidate.siteUrl || feed.siteUrl;
+  feed.aiConfig = {
+    ...(feed.aiConfig || {}),
+    rule: candidate.rule,
+    previewItems: candidate.previewItems,
+    notes: candidate.notes,
+    lastResolvedFetchMode: candidate.resolvedFetchMode || feed.aiConfig?.lastResolvedFetchMode || "",
+    verificationStatus: "verified",
+    lastRepairAt: new Date(),
+    lastRepairReason: reason,
+    repairCount: (feed.aiConfig?.repairCount || 0) + 1
+  };
+
+  await feed.save();
+  return candidate;
+}
+
+async function refreshAiFeed(feed) {
+  if (!feed.aiConfig?.rule?.itemSelector) {
+    throw new Error("This AI source has no verified extraction rule yet.");
+  }
+
+  let fetchResult = await fetchSourceHtml(feed.feedUrl, {
+    fetchMode: feed.aiConfig?.fetchMode || "auto",
+    waitUntil: feed.aiConfig?.waitUntil || "networkidle",
+    waitForSelector: feed.aiConfig?.waitForSelector || "",
+    waitAfterLoadMs: feed.aiConfig?.waitAfterLoadMs || 1500
+  });
+  let candidate = extractItemsWithRule({
+    url: feed.feedUrl,
+    html: fetchResult.html,
+    candidate: {
+      feedTitle: feed.title,
+      siteUrl: feed.siteUrl || feed.feedUrl,
+      notes: feed.aiConfig.notes || "",
+      rule: feed.aiConfig.rule
+    }
+  });
+
+  if (!candidate.previewItems.length) {
+    candidate = await repairAiFeedRule(feed, "Saved selector rule returned zero items.");
+  }
+
+  const importedCount = await importArticles(feed, candidate.previewItems, mapAiItemToArticle);
+  feed.title = candidate.feedTitle || feed.title;
+  feed.siteUrl = candidate.siteUrl || feed.siteUrl;
+  feed.aiConfig = {
+    ...(feed.aiConfig || {}),
+    previewItems: candidate.previewItems,
+    notes: candidate.notes || feed.aiConfig?.notes || "",
+    lastResolvedFetchMode: candidate.resolvedFetchMode || fetchResult.resolvedFetchMode || feed.aiConfig?.lastResolvedFetchMode || "",
+    verificationStatus: "verified"
+  };
+  feed.lastError = "";
+  feed.lastUpdatedAt = new Date();
+  feed.nextRefreshAt = computeNextRefreshAt();
+  await feed.save();
+
+  return { importedCount, title: feed.title };
+}
+
+async function refreshFeed(feed) {
+  if (feed.sourceType === "ai_scraped") {
+    return refreshAiFeed(feed);
+  }
+
+  return refreshRssFeed(feed);
 }
 
 async function refreshFeedById(feedId, userId) {
@@ -105,6 +247,7 @@ async function refreshAllFeedsForUser(userId) {
       results.push({ feedId: feed._id, ...result });
     } catch (error) {
       feed.lastError = error.message;
+      feed.nextRefreshAt = computeNextRefreshAt();
       await feed.save();
       results.push({ feedId: feed._id, error: error.message });
     }
@@ -115,6 +258,7 @@ async function refreshAllFeedsForUser(userId) {
 
 module.exports = {
   createFeed,
+  refreshFeed,
   refreshFeedById,
   refreshAllFeedsForUser
 };

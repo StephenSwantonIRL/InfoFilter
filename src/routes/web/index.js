@@ -10,6 +10,7 @@ const Plugin = require("../../models/Plugin");
 const { requireAuth, requireAdmin } = require("../../middleware/auth");
 const { createFeed, refreshFeedById } = require("../../services/feedService");
 const { applyFilters, matchesFilter } = require("../../services/filterService");
+const { fetchSourceHtml, generateScraperCandidate } = require("../../services/aiScraperService");
 const { importOpml, exportOpml } = require("../../services/opmlService");
 const { createGeneratedFeed, renderGeneratedFeed } = require("../../services/generatedFeedService");
 const env = require("../../config/env");
@@ -65,6 +66,16 @@ function buildViewQueryString({ selectedFeedId, selectedLabelId, selectedSpecial
   return query ? `?${query}` : "";
 }
 
+function buildViewState(req) {
+  return {
+    selectedFeedId: req.query.feed || null,
+    selectedLabelId: req.query.label || null,
+    selectedSpecial: req.query.special || null,
+    selectedCategoryId: req.query.category || null,
+    unreadOnly: req.query.unread === "1"
+  };
+}
+
 function buildFilterPayload(req) {
   const actionValue = req.body.actionType === "label" ? req.body.labelActionValue : (req.body.actionValue || "");
   return {
@@ -99,6 +110,20 @@ function buildFilterDraft(req) {
   };
 }
 
+function buildAiSourceDraft(req) {
+  return {
+    feedId: req.body.feedId || "",
+    title: req.body.title || "",
+    sourceUrl: req.body.sourceUrl || "",
+    guidance: req.body.guidance || "",
+    categoryIds: normalizeArray(req.body.categoryIds).map(String),
+    fetchMode: req.body.fetchMode || "auto",
+    waitUntil: req.body.waitUntil || "networkidle",
+    waitForSelector: req.body.waitForSelector || "",
+    waitAfterLoadMs: Number(req.body.waitAfterLoadMs || 1500)
+  };
+}
+
 function summarizePreviewChanges(beforeArticle, afterArticle, deleted) {
   const changes = [];
   if (deleted) changes.push("Would be deleted");
@@ -112,11 +137,13 @@ function summarizePreviewChanges(beforeArticle, afterArticle, deleted) {
 }
 
 async function renderPreferences(req, res, extras = {}) {
-  const [labels, filters, plugins, generatedFeeds] = await Promise.all([
+  const [labels, filters, plugins, generatedFeeds, aiSources, categories] = await Promise.all([
     Label.find({ userId: req.currentUser._id }).lean(),
     Filter.find({ userId: req.currentUser._id }).sort({ order: 1 }).lean(),
     Plugin.find().lean(),
-    GeneratedFeed.find({ userId: req.currentUser._id }).lean()
+    GeneratedFeed.find({ userId: req.currentUser._id }).lean(),
+    Feed.find({ userId: req.currentUser._id, sourceType: "ai_scraped" }).sort({ updatedAt: -1 }).lean(),
+    FeedCategory.find({ userId: req.currentUser._id }).sort({ name: 1 }).lean()
   ]);
 
   return res.render("prefs/index", {
@@ -126,8 +153,13 @@ async function renderPreferences(req, res, extras = {}) {
     filters,
     plugins,
     generatedFeeds,
+    aiSources,
+    categories,
+    hasOpenAIConfig: Boolean(env.openaiApiKey),
+    aiSourceError: null,
     previewResults: null,
     filterDraft: null,
+    aiSourceDraft: req.session.aiSourceDraft || null,
     ...extras
   });
 }
@@ -143,11 +175,7 @@ router.get("/public/feeds/:key", async (req, res, next) => {
 });
 
 router.get("/", requireAuth, async (req, res) => {
-  const selectedFeedId = req.query.feed || null;
-  const selectedLabelId = req.query.label || null;
-  const selectedSpecial = req.query.special || null;
-  const selectedCategoryId = req.query.category || null;
-  const unreadOnly = req.query.unread === "1";
+  const { selectedFeedId, selectedLabelId, selectedSpecial, selectedCategoryId, unreadOnly } = buildViewState(req);
   const [feeds, categories, labels, selectedFeed, selectedLabel, selectedCategory] = await Promise.all([
     Feed.find({ userId: req.currentUser._id }).sort({ title: 1 }).lean(),
     FeedCategory.find({ userId: req.currentUser._id }).sort({ name: 1 }).lean(),
@@ -198,6 +226,27 @@ router.get("/", requireAuth, async (req, res) => {
   });
 });
 
+router.post("/articles/mark-all-read", requireAuth, async (req, res) => {
+  const viewState = {
+    selectedFeedId: req.body.feed || null,
+    selectedLabelId: req.body.label || null,
+    selectedSpecial: req.body.special || null,
+    selectedCategoryId: req.body.category || null,
+    unreadOnly: req.body.unread === "1"
+  };
+
+  const feeds = await Feed.find({ userId: req.currentUser._id }).lean();
+  const articleQuery = buildArticleQueryForView({
+    userId: req.currentUser._id,
+    ...viewState,
+    feeds
+  });
+
+  await Article.updateMany(articleQuery, { $set: { isRead: true } });
+  const viewQueryString = buildViewQueryString(viewState);
+  return res.redirect(`/${viewQueryString}`);
+});
+
 router.get("/login", (_req, res) => {
   res.render("auth/login", { title: "Login", currentUser: null, error: null });
 });
@@ -245,6 +294,11 @@ router.post("/feeds", requireAuth, async (req, res) => {
 
 router.post("/feeds/:id", requireAuth, async (req, res) => {
   const categoryIds = normalizeArray(req.body.categoryIds);
+  const existingFeed = await Feed.findOne({ _id: req.params.id, userId: req.currentUser._id });
+  if (!existingFeed) {
+    return res.status(404).render("reader/error", { title: "Not Found", currentUser: req.currentUser, error: "Feed not found." });
+  }
+
   await Feed.updateOne(
     { _id: req.params.id, userId: req.currentUser._id },
     {
@@ -253,7 +307,17 @@ router.post("/feeds/:id", requireAuth, async (req, res) => {
         feedUrl: req.body.feedUrl,
         siteUrl: req.body.siteUrl,
         categoryId: categoryIds[0] || null,
-        categoryIds
+        categoryIds,
+        aiConfig: existingFeed.sourceType === "ai_scraped"
+          ? {
+              ...(existingFeed.aiConfig || {}),
+              guidance: req.body.aiGuidance || existingFeed.aiConfig?.guidance || "",
+              fetchMode: req.body.aiFetchMode || existingFeed.aiConfig?.fetchMode || "auto",
+              waitUntil: req.body.aiWaitUntil || existingFeed.aiConfig?.waitUntil || "networkidle",
+              waitForSelector: req.body.aiWaitForSelector || existingFeed.aiConfig?.waitForSelector || "",
+              waitAfterLoadMs: Number(req.body.aiWaitAfterLoadMs || existingFeed.aiConfig?.waitAfterLoadMs || 1500)
+            }
+          : existingFeed.aiConfig || null
       }
     }
   );
@@ -264,6 +328,58 @@ router.post("/feeds/:id", requireAuth, async (req, res) => {
 router.post("/feeds/:id/refresh", requireAuth, async (req, res) => {
   await refreshFeedById(req.params.id, req.currentUser._id);
   return res.redirect(req.get("referer") || `/?feed=${req.params.id}`);
+});
+
+router.post("/feeds/:id/ai-repair", requireAuth, async (req, res) => {
+  try {
+    const feed = await Feed.findOne({ _id: req.params.id, userId: req.currentUser._id, sourceType: "ai_scraped" });
+    if (!feed) {
+      return res.status(404).render("reader/error", { title: "Not Found", currentUser: req.currentUser, error: "AI source not found." });
+    }
+
+    const guidance = req.body.guidance || feed.aiConfig?.guidance || "";
+    const candidate = await generateScraperCandidate({
+      url: feed.feedUrl,
+      guidance,
+      previousRule: feed.aiConfig?.rule || null,
+      repairReason: "Manual user-triggered repair.",
+      fetchMode: req.body.fetchMode || feed.aiConfig?.fetchMode || "auto",
+      waitUntil: req.body.waitUntil || feed.aiConfig?.waitUntil || "networkidle",
+      waitForSelector: req.body.waitForSelector || feed.aiConfig?.waitForSelector || "",
+      waitAfterLoadMs: Number(req.body.waitAfterLoadMs || feed.aiConfig?.waitAfterLoadMs || 1500)
+    });
+
+    req.session.aiSourceDraft = {
+      feedId: String(feed._id),
+      title: feed.title,
+      sourceUrl: feed.feedUrl,
+      guidance,
+      categoryIds: getFeedCategoryIds(feed),
+      fetchMode: req.body.fetchMode || feed.aiConfig?.fetchMode || "auto",
+      waitUntil: req.body.waitUntil || feed.aiConfig?.waitUntil || "networkidle",
+      waitForSelector: req.body.waitForSelector || feed.aiConfig?.waitForSelector || "",
+      waitAfterLoadMs: Number(req.body.waitAfterLoadMs || feed.aiConfig?.waitAfterLoadMs || 1500),
+      candidate,
+      debug: candidate.debug || null
+    };
+
+    return renderPreferences(req, res, {
+      aiSourceDraft: req.session.aiSourceDraft
+    });
+  } catch (error) {
+    const draft = buildAiSourceDraft(req);
+    req.session.aiSourceDraft = {
+      ...draft,
+      title: req.body.title || "",
+      candidate: error.candidate || null,
+      debug: error.debug || null
+    };
+
+    return renderPreferences(req, res, {
+      aiSourceError: error.message,
+      aiSourceDraft: req.session.aiSourceDraft
+    });
+  }
 });
 
 router.delete("/feeds/:id", requireAuth, async (req, res) => {
@@ -313,14 +429,22 @@ router.get("/articles/:id", requireAuth, async (req, res) => {
     feeds
   });
 
+  if (unreadOnly) {
+    delete articleQuery.isRead;
+  }
+
   const viewArticles = await Article.find(articleQuery)
     .sort({ publishedAt: -1 })
-    .select("_id title")
+    .select("_id title isRead")
     .lean();
 
-  const currentIndex = viewArticles.findIndex((item) => String(item._id) === String(article._id));
-  const previousArticle = currentIndex > 0 ? viewArticles[currentIndex - 1] : null;
-  const nextArticle = currentIndex >= 0 && currentIndex < viewArticles.length - 1 ? viewArticles[currentIndex + 1] : null;
+  const effectiveViewArticles = unreadOnly
+    ? viewArticles.filter((item) => String(item._id) === String(article._id) || item.isRead === false)
+    : viewArticles;
+
+  const currentIndex = effectiveViewArticles.findIndex((item) => String(item._id) === String(article._id));
+  const previousArticle = currentIndex > 0 ? effectiveViewArticles[currentIndex - 1] : null;
+  const nextArticle = currentIndex >= 0 && currentIndex < effectiveViewArticles.length - 1 ? effectiveViewArticles[currentIndex + 1] : null;
   const viewQueryString = buildViewQueryString({ selectedFeedId, selectedLabelId, selectedSpecial, selectedCategoryId, unreadOnly });
 
   return res.render("reader/article", {
@@ -369,6 +493,45 @@ router.get("/prefs", requireAuth, async (req, res) => {
   return renderPreferences(req, res);
 });
 
+router.get("/prefs/ai-sources/debug-source", requireAuth, async (req, res) => {
+  const draft = req.session.aiSourceDraft;
+  if (!draft?.sourceUrl) {
+    return res.status(400).render("reader/error", {
+      title: "Debug Source Unavailable",
+      currentUser: req.currentUser,
+      error: "Generate an AI source preview first so there is a source URL and fetch configuration to inspect."
+    });
+  }
+
+  try {
+    const fetchResult = await fetchSourceHtml(draft.sourceUrl, {
+      fetchMode: draft.fetchMode || "auto",
+      waitUntil: draft.waitUntil || "networkidle",
+      waitForSelector: draft.waitForSelector || "",
+      waitAfterLoadMs: Number(draft.waitAfterLoadMs || 1500)
+    });
+
+    return res.render("prefs/ai-source-debug", {
+      title: "Fetched Source Debug",
+      currentUser: req.currentUser,
+      sourceUrl: draft.sourceUrl,
+      finalUrl: fetchResult.finalUrl || draft.sourceUrl,
+      requestedFetchMode: draft.fetchMode || "auto",
+      resolvedFetchMode: fetchResult.resolvedFetchMode || draft.fetchMode || "auto",
+      waitUntil: draft.waitUntil || "networkidle",
+      waitForSelector: draft.waitForSelector || "",
+      waitAfterLoadMs: Number(draft.waitAfterLoadMs || 1500),
+      fetchedHtml: fetchResult.html || ""
+    });
+  } catch (error) {
+    return res.status(500).render("reader/error", {
+      title: "Debug Source Failed",
+      currentUser: req.currentUser,
+      error: error.message
+    });
+  }
+});
+
 router.post("/prefs/account", requireAuth, async (req, res) => {
   await User.updateOne(
     { _id: req.currentUser._id },
@@ -405,6 +568,114 @@ router.post("/prefs/labels", requireAuth, async (req, res) => {
     color: req.body.color
   });
   return res.redirect("/prefs");
+});
+
+router.post("/prefs/ai-sources/preview", requireAuth, async (req, res) => {
+  try {
+    const draft = buildAiSourceDraft(req);
+    const existingFeedId = draft.feedId;
+
+    const existingFeed = existingFeedId
+      ? await Feed.findOne({ _id: existingFeedId, userId: req.currentUser._id, sourceType: "ai_scraped" })
+      : null;
+
+    const candidate = await generateScraperCandidate({
+      url: draft.sourceUrl,
+      guidance: draft.guidance,
+      previousRule: existingFeed?.aiConfig?.rule || null,
+      repairReason: existingFeed ? "Refreshing candidate during setup or repair." : "",
+      fetchMode: draft.fetchMode,
+      waitUntil: draft.waitUntil,
+      waitForSelector: draft.waitForSelector,
+      waitAfterLoadMs: draft.waitAfterLoadMs
+    });
+
+    req.session.aiSourceDraft = {
+      feedId: existingFeedId,
+      title: draft.title || existingFeed?.title || candidate.feedTitle,
+      sourceUrl: draft.sourceUrl,
+      guidance: draft.guidance,
+      categoryIds: draft.categoryIds,
+      fetchMode: draft.fetchMode,
+      waitUntil: draft.waitUntil,
+      waitForSelector: draft.waitForSelector,
+      waitAfterLoadMs: draft.waitAfterLoadMs,
+      candidate,
+      debug: candidate.debug || null
+    };
+
+    return renderPreferences(req, res, {
+      aiSourceDraft: req.session.aiSourceDraft
+    });
+  } catch (error) {
+    const draft = buildAiSourceDraft(req);
+    req.session.aiSourceDraft = {
+      ...draft,
+      candidate: error.candidate || null,
+      debug: error.debug || null
+    };
+
+    return renderPreferences(req, res, {
+      aiSourceError: error.message,
+      aiSourceDraft: req.session.aiSourceDraft
+    });
+  }
+});
+
+router.post("/prefs/ai-sources/discard", requireAuth, async (req, res) => {
+  delete req.session.aiSourceDraft;
+  return res.redirect("/prefs");
+});
+
+router.post("/prefs/ai-sources/confirm", requireAuth, async (req, res) => {
+  const draft = req.session.aiSourceDraft;
+  if (!draft?.candidate) {
+    return res.redirect("/prefs");
+  }
+
+  const existingFeedId = draft.feedId || "";
+  const feedPayload = {
+    title: draft.title || draft.candidate.feedTitle || draft.sourceUrl,
+    feedUrl: draft.sourceUrl,
+    siteUrl: draft.candidate.siteUrl || draft.sourceUrl,
+    categoryId: draft.categoryIds?.[0] || null,
+    categoryIds: draft.categoryIds || [],
+    sourceType: "ai_scraped",
+    aiConfig: {
+      guidance: draft.guidance || "",
+      notes: draft.candidate.notes || "",
+      fetchMode: draft.fetchMode || "auto",
+      waitUntil: draft.waitUntil || "networkidle",
+      waitForSelector: draft.waitForSelector || "",
+      waitAfterLoadMs: Number(draft.waitAfterLoadMs || 1500),
+      lastResolvedFetchMode: draft.candidate.resolvedFetchMode || "",
+      rule: draft.candidate.rule,
+      previewItems: draft.candidate.previewItems,
+      verificationStatus: "verified",
+      lastVerifiedAt: new Date(),
+      lastRepairAt: existingFeedId ? new Date() : null,
+      lastRepairReason: existingFeedId ? "User confirmed repaired AI rule." : "",
+      repairCount: existingFeedId ? 1 : 0
+    }
+  };
+
+  let feed;
+  if (existingFeedId) {
+    await Feed.updateOne(
+      { _id: existingFeedId, userId: req.currentUser._id },
+      { $set: feedPayload }
+    );
+    feed = await Feed.findOne({ _id: existingFeedId, userId: req.currentUser._id });
+  } else {
+    feed = await createFeed({
+      userId: req.currentUser._id,
+      ...feedPayload
+    });
+  }
+
+  delete req.session.aiSourceDraft;
+  await refreshFeedById(feed._id, req.currentUser._id);
+  return res.redirect(`/?feed=${feed._id}`);
 });
 
 router.post("/prefs/filters", requireAuth, async (req, res) => {
