@@ -7,6 +7,8 @@ InfoFilter is a Tiny Tiny RSS-inspired feed reader and aggregator built with Nod
 - Session-based authentication with admin and user roles
 - Feed subscriptions with categories/folders
 - AI-generated scraper rules for sources without official feeds, including preview verification and repair fallback
+- Newsletter-backed sources via IMAP mailbox ingestion and AI extraction
+- Bluesky profile sources via the public Bluesky AppView
 - Article import, unread/starred/published/archive state, notes, and tags
 - Regex-driven content filters with tag, score, read, publish, delete, and label actions
 - Labels and generated public feeds in Atom or JSON Feed format
@@ -29,6 +31,12 @@ Optional for AI sources:
 - Optionally set `OPENAI_MODEL` if you do not want the default
 - Install browser support with `npm install` so Playwright is available for rendered-source fetching
 
+Optional for newsletter sources:
+
+- Configure `IMAP_HOST`, `IMAP_PORT`, `IMAP_SECURE`, `IMAP_USER`, and `IMAP_PASSWORD` in `.env`
+- If your mail path uses a self-signed or intercepted certificate chain, set `IMAP_REJECT_UNAUTHORIZED=false` only if you trust that environment
+- Point newsletter subscriptions at that mailbox
+
 Default login comes from `.env`:
 
 - Email: `ADMIN_EMAIL`
@@ -43,6 +51,8 @@ Default login comes from `.env`:
 - AI sources support `auto`, `direct`, and `browser-rendered` fetch modes. Use browser mode for JS-heavy or bot-protected sites, and optionally provide a selector to wait for before previewing.
 - AI rule generation supports a primary model plus fallback models via `OPENAI_MODEL` and `OPENAI_FALLBACK_MODELS`.
 - If a generated rule returns no preview items, the AI Sources panel now shows rendered-page debug details, including candidate containers, sample links, and rule match counts to help refine guidance or wait settings.
+- Newsletter sources are created from `Preferences > Newsletter Sources`. They match incoming emails by sender and/or subject, can also handle forwarded newsletters by inspecting original sender/subject inside the forwarded message, preview extracted stories from the latest matching email, and then refresh from the mailbox like any other source.
+- Bluesky sources are created from `Preferences > Bluesky Sources`. They preview public posts from a profile handle, can include or exclude replies and reposts, and refresh using the public Bluesky AppView at `https://public.api.bsky.app`.
 
 ## Source inspiration
 

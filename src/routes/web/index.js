@@ -11,6 +11,8 @@ const { requireAuth, requireAdmin } = require("../../middleware/auth");
 const { createFeed, refreshFeedById } = require("../../services/feedService");
 const { applyFilters, matchesFilter } = require("../../services/filterService");
 const { fetchSourceHtml, generateScraperCandidate } = require("../../services/aiScraperService");
+const { fetchMatchingNewsletterMessages, extractNewsletterItems } = require("../../services/newsletterService");
+const { fetchBlueskyAuthorFeed, normalizeHandle } = require("../../services/blueskyService");
 const { importOpml, exportOpml } = require("../../services/opmlService");
 const { createGeneratedFeed, renderGeneratedFeed } = require("../../services/generatedFeedService");
 const env = require("../../config/env");
@@ -124,6 +126,30 @@ function buildAiSourceDraft(req) {
   };
 }
 
+function buildNewsletterSourceDraft(req) {
+  return {
+    feedId: req.body.feedId || "",
+    title: req.body.title || "",
+    senderPattern: req.body.senderPattern || "",
+    subjectPattern: req.body.subjectPattern || "",
+    forwardedByPattern: req.body.forwardedByPattern || "",
+    mailbox: req.body.mailbox || env.imapMailbox || "INBOX",
+    guidance: req.body.guidance || "",
+    categoryIds: normalizeArray(req.body.categoryIds).map(String)
+  };
+}
+
+function buildBlueskySourceDraft(req) {
+  return {
+    feedId: req.body.feedId || "",
+    title: req.body.title || "",
+    handle: normalizeHandle(req.body.handle || ""),
+    includeReplies: req.body.includeReplies === "on",
+    includeReposts: req.body.includeReposts === "on",
+    categoryIds: normalizeArray(req.body.categoryIds).map(String)
+  };
+}
+
 function summarizePreviewChanges(beforeArticle, afterArticle, deleted) {
   const changes = [];
   if (deleted) changes.push("Would be deleted");
@@ -137,29 +163,39 @@ function summarizePreviewChanges(beforeArticle, afterArticle, deleted) {
 }
 
 async function renderPreferences(req, res, extras = {}) {
-  const [labels, filters, plugins, generatedFeeds, aiSources, categories] = await Promise.all([
+  const [labels, filters, plugins, generatedFeeds, aiSources, newsletterSources, blueskySources, categories] = await Promise.all([
     Label.find({ userId: req.currentUser._id }).lean(),
     Filter.find({ userId: req.currentUser._id }).sort({ order: 1 }).lean(),
     Plugin.find().lean(),
     GeneratedFeed.find({ userId: req.currentUser._id }).lean(),
     Feed.find({ userId: req.currentUser._id, sourceType: "ai_scraped" }).sort({ updatedAt: -1 }).lean(),
+    Feed.find({ userId: req.currentUser._id, sourceType: "newsletter" }).sort({ updatedAt: -1 }).lean(),
+    Feed.find({ userId: req.currentUser._id, sourceType: "bluesky" }).sort({ updatedAt: -1 }).lean(),
     FeedCategory.find({ userId: req.currentUser._id }).sort({ name: 1 }).lean()
   ]);
 
   return res.render("prefs/index", {
     title: "Preferences",
     currentUser: req.currentUser,
+    getFeedCategoryIds,
     labels,
     filters,
     plugins,
     generatedFeeds,
     aiSources,
+    newsletterSources,
+    blueskySources,
     categories,
     hasOpenAIConfig: Boolean(env.openaiApiKey),
+    hasImapConfig: Boolean(env.imapHost && env.imapUser && env.imapPassword),
     aiSourceError: null,
+    newsletterSourceError: null,
+    blueskySourceError: null,
     previewResults: null,
     filterDraft: null,
     aiSourceDraft: req.session.aiSourceDraft || null,
+    newsletterSourceDraft: req.session.newsletterSourceDraft || null,
+    blueskySourceDraft: req.session.blueskySourceDraft || null,
     ...extras
   });
 }
@@ -304,7 +340,11 @@ router.post("/feeds/:id", requireAuth, async (req, res) => {
     {
       $set: {
         title: req.body.title,
-        feedUrl: req.body.feedUrl,
+        feedUrl: existingFeed.sourceType === "newsletter"
+          ? existingFeed.feedUrl
+          : existingFeed.sourceType === "bluesky"
+            ? `bluesky://${normalizeHandle(req.body.blueskyHandle || existingFeed.blueskyConfig?.handle || "")}`
+            : req.body.feedUrl,
         siteUrl: req.body.siteUrl,
         categoryId: categoryIds[0] || null,
         categoryIds,
@@ -317,7 +357,25 @@ router.post("/feeds/:id", requireAuth, async (req, res) => {
               waitForSelector: req.body.aiWaitForSelector || existingFeed.aiConfig?.waitForSelector || "",
               waitAfterLoadMs: Number(req.body.aiWaitAfterLoadMs || existingFeed.aiConfig?.waitAfterLoadMs || 1500)
             }
-          : existingFeed.aiConfig || null
+          : existingFeed.aiConfig || null,
+        newsletterConfig: existingFeed.sourceType === "newsletter"
+          ? {
+              ...(existingFeed.newsletterConfig || {}),
+              senderPattern: req.body.newsletterSenderPattern || existingFeed.newsletterConfig?.senderPattern || "",
+              subjectPattern: req.body.newsletterSubjectPattern || existingFeed.newsletterConfig?.subjectPattern || "",
+              forwardedByPattern: req.body.newsletterForwardedByPattern || existingFeed.newsletterConfig?.forwardedByPattern || "",
+              mailbox: req.body.newsletterMailbox || existingFeed.newsletterConfig?.mailbox || env.imapMailbox || "INBOX",
+              guidance: req.body.newsletterGuidance || existingFeed.newsletterConfig?.guidance || ""
+            }
+          : existingFeed.newsletterConfig || null,
+        blueskyConfig: existingFeed.sourceType === "bluesky"
+          ? {
+              ...(existingFeed.blueskyConfig || {}),
+              handle: normalizeHandle(req.body.blueskyHandle || existingFeed.blueskyConfig?.handle || ""),
+              includeReplies: req.body.blueskyIncludeReplies === "on",
+              includeReposts: req.body.blueskyIncludeReposts === "on"
+            }
+          : existingFeed.blueskyConfig || null
       }
     }
   );
@@ -674,6 +732,229 @@ router.post("/prefs/ai-sources/confirm", requireAuth, async (req, res) => {
   }
 
   delete req.session.aiSourceDraft;
+  await refreshFeedById(feed._id, req.currentUser._id);
+  return res.redirect(`/?feed=${feed._id}`);
+});
+
+router.post("/prefs/newsletter-sources/preview", requireAuth, async (req, res) => {
+  try {
+    const draft = buildNewsletterSourceDraft(req);
+    if (!draft.senderPattern && !draft.subjectPattern && !draft.forwardedByPattern) {
+      throw new Error("Add at least a sender, subject, or forwarding-account pattern before previewing a newsletter source.");
+    }
+
+    const existingFeedId = draft.feedId;
+    const existingFeed = existingFeedId
+      ? await Feed.findOne({ _id: existingFeedId, userId: req.currentUser._id, sourceType: "newsletter" })
+      : null;
+
+    const messages = await fetchMatchingNewsletterMessages({
+      mailbox: draft.mailbox,
+      senderPattern: draft.senderPattern,
+      subjectPattern: draft.subjectPattern,
+      forwardedByPattern: draft.forwardedByPattern,
+      limit: 1
+    });
+
+    if (!messages.length) {
+      throw new Error("No matching newsletter email was found. Try a broader sender or subject pattern.");
+    }
+
+    const message = messages[0];
+    const candidate = await extractNewsletterItems({
+      message,
+      guidance: draft.guidance,
+      title: draft.title || existingFeed?.title || ""
+    });
+
+    req.session.newsletterSourceDraft = {
+      ...draft,
+      title: draft.title || existingFeed?.title || candidate.feedTitle,
+      candidate,
+      message: {
+        from: message.from,
+        subject: message.subject,
+        originalFrom: message.originalFrom || "",
+        originalSubject: message.originalSubject || "",
+        receivedAt: message.receivedAt,
+        messageId: message.messageId
+      }
+    };
+
+    return renderPreferences(req, res, {
+      newsletterSourceDraft: req.session.newsletterSourceDraft
+    });
+  } catch (error) {
+    const draft = buildNewsletterSourceDraft(req);
+    req.session.newsletterSourceDraft = {
+      ...draft,
+      candidate: null
+    };
+
+    return renderPreferences(req, res, {
+      newsletterSourceError: error.message,
+      newsletterSourceDraft: req.session.newsletterSourceDraft
+    });
+  }
+});
+
+router.post("/prefs/newsletter-sources/discard", requireAuth, async (req, res) => {
+  delete req.session.newsletterSourceDraft;
+  return res.redirect("/prefs");
+});
+
+router.post("/prefs/newsletter-sources/confirm", requireAuth, async (req, res) => {
+  const draft = req.session.newsletterSourceDraft;
+  if (!draft?.candidate) {
+    return res.redirect("/prefs");
+  }
+
+  const existingFeedId = draft.feedId || "";
+  const feedPayload = {
+    title: draft.title || draft.candidate.feedTitle || draft.subjectPattern || "Newsletter Source",
+    feedUrl: existingFeedId ? undefined : `newsletter://${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+    siteUrl: "",
+    categoryId: draft.categoryIds?.[0] || null,
+    categoryIds: draft.categoryIds || [],
+    sourceType: "newsletter",
+    newsletterConfig: {
+      senderPattern: draft.senderPattern || "",
+      subjectPattern: draft.subjectPattern || "",
+      forwardedByPattern: draft.forwardedByPattern || "",
+      mailbox: draft.mailbox || env.imapMailbox || "INBOX",
+      guidance: draft.guidance || "",
+      notes: draft.candidate.notes || "",
+      previewItems: draft.candidate.previewItems || [],
+      latestMessageId: draft.message?.messageId || "",
+      latestMessageSubject: draft.message?.subject || "",
+      latestMessageAt: draft.message?.receivedAt ? new Date(draft.message.receivedAt) : null,
+      verificationStatus: "verified",
+      lastVerifiedAt: new Date()
+    }
+  };
+
+  let feed;
+  if (existingFeedId) {
+    const existingFeed = await Feed.findOne({ _id: existingFeedId, userId: req.currentUser._id, sourceType: "newsletter" });
+    if (!existingFeed) {
+      delete req.session.newsletterSourceDraft;
+      return res.redirect("/prefs");
+    }
+
+    await Feed.updateOne(
+      { _id: existingFeedId, userId: req.currentUser._id },
+      {
+        $set: {
+          title: feedPayload.title,
+          siteUrl: feedPayload.siteUrl,
+          categoryId: feedPayload.categoryId,
+          categoryIds: feedPayload.categoryIds,
+          sourceType: "newsletter",
+          newsletterConfig: feedPayload.newsletterConfig
+        }
+      }
+    );
+    feed = await Feed.findOne({ _id: existingFeedId, userId: req.currentUser._id });
+  } else {
+    feed = await createFeed({
+      userId: req.currentUser._id,
+      ...feedPayload
+    });
+  }
+
+  delete req.session.newsletterSourceDraft;
+  await refreshFeedById(feed._id, req.currentUser._id);
+  return res.redirect(`/?feed=${feed._id}`);
+});
+
+router.post("/prefs/bluesky-sources/preview", requireAuth, async (req, res) => {
+  try {
+    const draft = buildBlueskySourceDraft(req);
+    if (!draft.handle) {
+      throw new Error("Add a Bluesky handle before previewing a Bluesky source.");
+    }
+
+    const existingFeed = draft.feedId
+      ? await Feed.findOne({ _id: draft.feedId, userId: req.currentUser._id, sourceType: "bluesky" })
+      : null;
+
+    const candidate = await fetchBlueskyAuthorFeed({
+      handle: draft.handle,
+      includeReplies: draft.includeReplies,
+      includeReposts: draft.includeReposts,
+      limit: 30
+    });
+
+    req.session.blueskySourceDraft = {
+      ...draft,
+      title: draft.title || existingFeed?.title || candidate.feedTitle,
+      candidate
+    };
+
+    return renderPreferences(req, res, {
+      blueskySourceDraft: req.session.blueskySourceDraft
+    });
+  } catch (error) {
+    const draft = buildBlueskySourceDraft(req);
+    req.session.blueskySourceDraft = {
+      ...draft,
+      candidate: null
+    };
+
+    return renderPreferences(req, res, {
+      blueskySourceError: error.message,
+      blueskySourceDraft: req.session.blueskySourceDraft
+    });
+  }
+});
+
+router.post("/prefs/bluesky-sources/discard", requireAuth, async (req, res) => {
+  delete req.session.blueskySourceDraft;
+  return res.redirect("/prefs");
+});
+
+router.post("/prefs/bluesky-sources/confirm", requireAuth, async (req, res) => {
+  const draft = req.session.blueskySourceDraft;
+  if (!draft?.candidate) {
+    return res.redirect("/prefs");
+  }
+
+  const existingFeedId = draft.feedId || "";
+  const handle = normalizeHandle(draft.handle);
+  const feedPayload = {
+    title: draft.title || draft.candidate.feedTitle || `@${handle} on Bluesky`,
+    feedUrl: `bluesky://${handle}`,
+    siteUrl: draft.candidate.siteUrl || `https://bsky.app/profile/${handle}`,
+    categoryId: draft.categoryIds?.[0] || null,
+    categoryIds: draft.categoryIds || [],
+    sourceType: "bluesky",
+    blueskyConfig: {
+      handle,
+      includeReplies: Boolean(draft.includeReplies),
+      includeReposts: Boolean(draft.includeReposts),
+      notes: draft.candidate.notes || "",
+      previewItems: draft.candidate.previewItems || [],
+      latestPostUri: draft.candidate.latestPostUri || "",
+      verificationStatus: "verified",
+      lastVerifiedAt: new Date()
+    }
+  };
+
+  let feed;
+  if (existingFeedId) {
+    await Feed.updateOne(
+      { _id: existingFeedId, userId: req.currentUser._id, sourceType: "bluesky" },
+      { $set: feedPayload }
+    );
+    feed = await Feed.findOne({ _id: existingFeedId, userId: req.currentUser._id });
+  } else {
+    feed = await createFeed({
+      userId: req.currentUser._id,
+      ...feedPayload
+    });
+  }
+
+  delete req.session.blueskySourceDraft;
   await refreshFeedById(feed._id, req.currentUser._id);
   return res.redirect(`/?feed=${feed._id}`);
 });

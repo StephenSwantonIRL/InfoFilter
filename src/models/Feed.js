@@ -50,13 +50,53 @@ const aiConfigSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const newsletterConfigSchema = new mongoose.Schema(
+  {
+    senderPattern: { type: String, default: "" },
+    subjectPattern: { type: String, default: "" },
+    forwardedByPattern: { type: String, default: "" },
+    mailbox: { type: String, default: "INBOX" },
+    guidance: { type: String, default: "" },
+    notes: { type: String, default: "" },
+    previewItems: { type: [aiPreviewItemSchema], default: [] },
+    latestMessageId: { type: String, default: "" },
+    latestMessageSubject: { type: String, default: "" },
+    latestMessageAt: { type: Date, default: null },
+    verificationStatus: {
+      type: String,
+      enum: ["pending", "verified", "failed"],
+      default: "pending"
+    },
+    lastVerifiedAt: { type: Date, default: null }
+  },
+  { _id: false }
+);
+
+const blueskyConfigSchema = new mongoose.Schema(
+  {
+    handle: { type: String, default: "" },
+    includeReplies: { type: Boolean, default: false },
+    includeReposts: { type: Boolean, default: false },
+    notes: { type: String, default: "" },
+    previewItems: { type: [aiPreviewItemSchema], default: [] },
+    latestPostUri: { type: String, default: "" },
+    verificationStatus: {
+      type: String,
+      enum: ["pending", "verified", "failed"],
+      default: "pending"
+    },
+    lastVerifiedAt: { type: Date, default: null }
+  },
+  { _id: false }
+);
+
 const feedSchema = new mongoose.Schema(
   {
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
     title: { type: String, required: true },
     siteUrl: { type: String, default: "" },
     feedUrl: { type: String, required: true },
-    sourceType: { type: String, enum: ["rss", "ai_scraped"], default: "rss" },
+    sourceType: { type: String, enum: ["rss", "ai_scraped", "newsletter", "bluesky"], default: "rss" },
     categoryId: { type: mongoose.Schema.Types.ObjectId, ref: "FeedCategory", default: null },
     categoryIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "FeedCategory" }],
     iconUrl: { type: String, default: "" },
@@ -66,6 +106,8 @@ const feedSchema = new mongoose.Schema(
     autoArchiveDays: { type: Number, default: 0 },
     generatedFeedKey: { type: String, required: true },
     aiConfig: { type: aiConfigSchema, default: null },
+    newsletterConfig: { type: newsletterConfigSchema, default: null },
+    blueskyConfig: { type: blueskyConfigSchema, default: null },
     lastUpdatedAt: { type: Date, default: null },
     lastError: { type: String, default: "" },
     nextRefreshAt: { type: Date, default: null }

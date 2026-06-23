@@ -168,7 +168,7 @@
         <% if (articles.length === 0) { %>
           <div class="notification is-light">
             <p class="has-text-weight-semibold mb-2">No articles yet.</p>
-            <p><%= selectedCategory ? "Add feeds to this folder, then refresh those feeds to populate the folder view." : (selectedSpecial === "starred" ? "Star some articles from the reader and they will appear here." : (selectedFeed ? "Try refreshing this feed, or check that the source URL is a valid RSS/Atom endpoint." : "Subscribe to a feed to start filling your reader.")) %></p>
+            <p><%= selectedCategory ? "Add feeds to this folder, then refresh those feeds to populate the folder view." : (selectedSpecial === "starred" ? "Star some articles from the reader and they will appear here." : (selectedFeed ? (selectedFeed.sourceType === "newsletter" ? "Try refreshing this newsletter source after a matching email arrives in your mailbox." : (selectedFeed.sourceType === "bluesky" ? "Try refreshing this Bluesky source, or confirm the Bluesky handle is correct." : "Try refreshing this feed, or check that the source URL is a valid RSS/Atom endpoint.")) : "Subscribe to a feed to start filling your reader.")) %></p>
           </div>
         <% } %>
 
@@ -187,10 +187,12 @@
                   <label class="label">Title</label>
                   <input class="input" type="text" name="title" value="<%= selectedFeed.title %>" required />
                 </div>
-                <div class="field">
-                  <label class="label">Feed URL</label>
-                  <input class="input" type="url" name="feedUrl" value="<%= selectedFeed.feedUrl %>" required />
-                </div>
+                <% if (selectedFeed.sourceType !== "newsletter" && selectedFeed.sourceType !== "bluesky") { %>
+                  <div class="field">
+                    <label class="label">Feed URL</label>
+                    <input class="input" type="url" name="feedUrl" value="<%= selectedFeed.feedUrl %>" required />
+                  </div>
+                <% } %>
                 <div class="field">
                   <label class="label">Site URL</label>
                   <input class="input" type="url" name="siteUrl" value="<%= selectedFeed.siteUrl %>" />
@@ -234,6 +236,54 @@
                     <% if (selectedFeed.aiConfig?.lastResolvedFetchMode) { %>
                       <p class="is-size-7 mt-2">Last successful fetch mode: <strong><%= selectedFeed.aiConfig.lastResolvedFetchMode %></strong></p>
                     <% } %>
+                  </div>
+                <% } else if (selectedFeed.sourceType === "newsletter") { %>
+                  <div class="field">
+                    <label class="label">Sender pattern</label>
+                    <input class="input" type="text" name="newsletterSenderPattern" value="<%= selectedFeed.newsletterConfig?.senderPattern || '' %>" placeholder="newsletter@publisher.com" />
+                  </div>
+                  <div class="field">
+                    <label class="label">Subject pattern</label>
+                    <input class="input" type="text" name="newsletterSubjectPattern" value="<%= selectedFeed.newsletterConfig?.subjectPattern || '' %>" placeholder="Daily Briefing" />
+                  </div>
+                  <div class="field">
+                    <label class="label">Forwarding account pattern</label>
+                    <input class="input" type="text" name="newsletterForwardedByPattern" value="<%= selectedFeed.newsletterConfig?.forwardedByPattern || '' %>" placeholder="Optional forwarding mailbox or alias" />
+                  </div>
+                  <div class="field">
+                    <label class="label">Mailbox</label>
+                    <input class="input" type="text" name="newsletterMailbox" value="<%= selectedFeed.newsletterConfig?.mailbox || 'INBOX' %>" />
+                  </div>
+                  <div class="field">
+                    <label class="label">Newsletter guidance</label>
+                    <textarea class="textarea" name="newsletterGuidance" rows="3"><%= selectedFeed.newsletterConfig?.guidance || "" %></textarea>
+                  </div>
+                  <div class="notification is-light mb-4">
+                    <p class="has-text-weight-semibold">Newsletter-backed source</p>
+                    <p class="is-size-7">This feed reads a matching email from your configured mailbox and extracts article items from the newsletter body.</p>
+                    <% if (selectedFeed.newsletterConfig?.latestMessageSubject) { %>
+                      <p class="is-size-7 mt-2">Last matched message: <strong><%= selectedFeed.newsletterConfig.latestMessageSubject %></strong></p>
+                    <% } %>
+                  </div>
+                <% } else if (selectedFeed.sourceType === "bluesky") { %>
+                  <div class="field">
+                    <label class="label">Bluesky handle</label>
+                    <input class="input" type="text" name="blueskyHandle" value="<%= selectedFeed.blueskyConfig?.handle || '' %>" placeholder="example.bsky.social" />
+                  </div>
+                  <div class="field is-grouped is-grouped-multiline">
+                    <label class="checkbox mr-4">
+                      <input type="checkbox" name="blueskyIncludeReplies" <%= selectedFeed.blueskyConfig?.includeReplies ? "checked" : "" %> />
+                      <span class="ml-2">Include replies</span>
+                    </label>
+                    <label class="checkbox">
+                      <input type="checkbox" name="blueskyIncludeReposts" <%= selectedFeed.blueskyConfig?.includeReposts ? "checked" : "" %> />
+                      <span class="ml-2">Include reposts</span>
+                    </label>
+                  </div>
+                  <div class="notification is-light mb-4">
+                    <p class="has-text-weight-semibold">Bluesky source</p>
+                    <p class="is-size-7">This feed reads public posts from a Bluesky profile through the public Bluesky AppView.</p>
+                    <p class="is-size-7 mt-2"><a href="<%= selectedFeed.siteUrl %>" target="_blank" rel="noreferrer"><%= selectedFeed.siteUrl %></a></p>
                   </div>
                 <% } %>
                 <div class="field">

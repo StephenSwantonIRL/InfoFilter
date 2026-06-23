@@ -21,6 +21,8 @@
     "express-session": "^1.18.1",
     "fast-xml-parser": "^5.9.3",
     "feed": "^4.2.2",
+    "imapflow": "^1.0.181",
+    "mailparser": "^3.7.2",
     "method-override": "^3.0.0",
     "mongoose": "^8.8.0",
     "morgan": "^1.10.0",

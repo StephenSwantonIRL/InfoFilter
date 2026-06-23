@@ -5,6 +5,8 @@ const Filter = require("../models/Filter");
 const Article = require("../models/Article");
 const { applyFilters } = require("./filterService");
 const { fetchSourceHtml, extractItemsWithRule, generateScraperCandidate } = require("./aiScraperService");
+const { fetchMatchingNewsletterMessages, extractNewsletterItems } = require("./newsletterService");
+const { fetchBlueskyAuthorFeed, normalizeHandle } = require("./blueskyService");
 const env = require("../config/env");
 
 const parser = new Parser({
@@ -84,6 +86,60 @@ function mapAiItemToArticle(userId, feed, item) {
   };
 }
 
+function mapNewsletterItemToArticle(userId, feed, item) {
+  const parsedPublishedAt = item.publishedAt ? new Date(item.publishedAt) : new Date();
+  const publishedAt = Number.isNaN(parsedPublishedAt.getTime()) ? new Date() : parsedPublishedAt;
+
+  return {
+    userId,
+    feedId: feed._id,
+    guid: item.link || `${item.title}-${publishedAt.toISOString()}`,
+    title: item.title || "Untitled",
+    link: item.link || "",
+    author: "",
+    content: item.summary || "",
+    summary: item.summary || "",
+    tags: ["newsletter"],
+    labelIds: [],
+    score: 0,
+    publishedAt,
+    importedAt: new Date(),
+    updatedAtFeed: publishedAt,
+    isRead: false,
+    isStarred: false,
+    isPublished: false,
+    isArchived: false,
+    note: ""
+  };
+}
+
+function mapBlueskyItemToArticle(userId, feed, item) {
+  const parsedPublishedAt = item.publishedAt ? new Date(item.publishedAt) : new Date();
+  const publishedAt = Number.isNaN(parsedPublishedAt.getTime()) ? new Date() : parsedPublishedAt;
+
+  return {
+    userId,
+    feedId: feed._id,
+    guid: item.guid || item.link || `${item.title}-${publishedAt.toISOString()}`,
+    title: item.title || "Bluesky Post",
+    link: item.link || "",
+    author: item.author || "",
+    content: item.summary || "",
+    summary: item.summary || "",
+    tags: ["bluesky"],
+    labelIds: [],
+    score: 0,
+    publishedAt,
+    importedAt: new Date(),
+    updatedAtFeed: publishedAt,
+    isRead: false,
+    isStarred: false,
+    isPublished: false,
+    isArchived: false,
+    note: ""
+  };
+}
+
 async function createFeed({
   userId,
   title,
@@ -92,7 +148,9 @@ async function createFeed({
   categoryId = null,
   categoryIds = [],
   sourceType = "rss",
-  aiConfig = null
+  aiConfig = null,
+  newsletterConfig = null,
+  blueskyConfig = null
 }) {
   const normalizedCategoryIds = (categoryIds.length ? categoryIds : [categoryId])
     .filter(Boolean);
@@ -105,6 +163,8 @@ async function createFeed({
     categoryId,
     categoryIds: normalizedCategoryIds,
     aiConfig,
+    newsletterConfig,
+    blueskyConfig,
     generatedFeedKey: createKey(32),
     nextRefreshAt: computeNextRefreshAt()
   });
@@ -220,9 +280,122 @@ async function refreshAiFeed(feed) {
   return { importedCount, title: feed.title };
 }
 
+async function refreshNewsletterFeed(feed) {
+  if (!feed.newsletterConfig?.senderPattern && !feed.newsletterConfig?.subjectPattern && !feed.newsletterConfig?.forwardedByPattern) {
+    throw new Error("This newsletter source needs at least a sender, subject, or forwarding-account pattern.");
+  }
+
+  const messages = await fetchMatchingNewsletterMessages({
+    mailbox: feed.newsletterConfig?.mailbox || env.imapMailbox || "INBOX",
+    senderPattern: feed.newsletterConfig?.senderPattern || "",
+    subjectPattern: feed.newsletterConfig?.subjectPattern || "",
+    forwardedByPattern: feed.newsletterConfig?.forwardedByPattern || "",
+    limit: 3
+  });
+
+  if (!messages.length) {
+    throw new Error("No matching newsletter emails were found in the configured mailbox.");
+  }
+
+  const newestMessage = messages[0];
+  if (feed.newsletterConfig?.latestMessageId && feed.newsletterConfig.latestMessageId === newestMessage.messageId) {
+    feed.lastError = "";
+    feed.lastUpdatedAt = new Date();
+    feed.nextRefreshAt = computeNextRefreshAt();
+    await feed.save();
+    return { importedCount: 0, title: feed.title };
+  }
+
+  const allItems = [];
+  let latestCandidate = null;
+
+  for (const message of messages) {
+    const candidate = await extractNewsletterItems({
+      message,
+      guidance: feed.newsletterConfig?.guidance || "",
+      title: feed.title
+    });
+    latestCandidate = latestCandidate || candidate;
+    allItems.push(...candidate.previewItems);
+  }
+
+  if (!allItems.length) {
+    throw new Error("The newsletter extractor did not find any article items in the matched emails.");
+  }
+
+  const importedCount = await importArticles(feed, allItems, mapNewsletterItemToArticle);
+  feed.title = latestCandidate?.feedTitle || feed.title;
+  feed.newsletterConfig = {
+    ...(feed.newsletterConfig || {}),
+    notes: latestCandidate?.notes || feed.newsletterConfig?.notes || "",
+    previewItems: latestCandidate?.previewItems || [],
+    latestMessageId: newestMessage.messageId,
+    latestMessageSubject: newestMessage.subject || "",
+    latestMessageAt: newestMessage.receivedAt ? new Date(newestMessage.receivedAt) : new Date(),
+    verificationStatus: "verified",
+    lastVerifiedAt: new Date()
+  };
+  feed.lastError = "";
+  feed.lastUpdatedAt = new Date();
+  feed.nextRefreshAt = computeNextRefreshAt();
+  await feed.save();
+
+  return { importedCount, title: feed.title };
+}
+
+async function refreshBlueskyFeed(feed) {
+  const handle = normalizeHandle(feed.blueskyConfig?.handle || "");
+  if (!handle) {
+    throw new Error("This Bluesky source needs a handle.");
+  }
+
+  const candidate = await fetchBlueskyAuthorFeed({
+    handle,
+    includeReplies: Boolean(feed.blueskyConfig?.includeReplies),
+    includeReposts: Boolean(feed.blueskyConfig?.includeReposts),
+    limit: 30
+  });
+
+  if (feed.blueskyConfig?.latestPostUri && feed.blueskyConfig.latestPostUri === candidate.latestPostUri) {
+    feed.lastError = "";
+    feed.lastUpdatedAt = new Date();
+    feed.nextRefreshAt = computeNextRefreshAt();
+    await feed.save();
+    return { importedCount: 0, title: feed.title };
+  }
+
+  const importedCount = await importArticles(feed, candidate.previewItems, mapBlueskyItemToArticle);
+  feed.title = candidate.feedTitle || feed.title;
+  feed.siteUrl = candidate.siteUrl || feed.siteUrl;
+  feed.feedUrl = `bluesky://${handle}`;
+  feed.blueskyConfig = {
+    ...(feed.blueskyConfig || {}),
+    handle,
+    notes: candidate.notes || feed.blueskyConfig?.notes || "",
+    previewItems: candidate.previewItems || [],
+    latestPostUri: candidate.latestPostUri || "",
+    verificationStatus: "verified",
+    lastVerifiedAt: new Date()
+  };
+  feed.lastError = "";
+  feed.lastUpdatedAt = new Date();
+  feed.nextRefreshAt = computeNextRefreshAt();
+  await feed.save();
+
+  return { importedCount, title: feed.title };
+}
+
 async function refreshFeed(feed) {
   if (feed.sourceType === "ai_scraped") {
     return refreshAiFeed(feed);
+  }
+
+  if (feed.sourceType === "newsletter") {
+    return refreshNewsletterFeed(feed);
+  }
+
+  if (feed.sourceType === "bluesky") {
+    return refreshBlueskyFeed(feed);
   }
 
   return refreshRssFeed(feed);

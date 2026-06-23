@@ -489,6 +489,254 @@
         </div>
 
         <div class="box glass-panel">
+          <h2 class="title is-5">Newsletter Sources</h2>
+          <p class="is-size-7 mb-4">Create a feed from newsletter emails delivered to your dedicated mailbox.</p>
+          <% if (newsletterSourceError) { %>
+            <div class="notification is-danger is-light mb-4"><%= newsletterSourceError %></div>
+          <% } %>
+          <% if (!hasImapConfig) { %>
+            <div class="notification is-light mb-4">
+              Add `IMAP_HOST`, `IMAP_USER`, and `IMAP_PASSWORD` to your environment to enable newsletter sources.
+            </div>
+          <% } %>
+          <% if (!hasOpenAIConfig) { %>
+            <div class="notification is-light mb-4">
+              Add `OPENAI_API_KEY` to your environment to enable newsletter extraction.
+            </div>
+          <% } %>
+          <form action="/prefs/newsletter-sources/preview" method="post">
+            <div class="field">
+              <label class="label">Feed title</label>
+              <input class="input" type="text" name="title" value="<%= newsletterSourceDraft?.feedId ? '' : (newsletterSourceDraft?.title || '') %>" placeholder="Optional title override" />
+            </div>
+            <div class="field">
+              <label class="label">Sender pattern</label>
+              <input class="input" type="text" name="senderPattern" value="<%= newsletterSourceDraft?.senderPattern || '' %>" placeholder="newsletter@publisher.com or Fast Company" />
+            </div>
+            <div class="field">
+              <label class="label">Subject pattern</label>
+              <input class="input" type="text" name="subjectPattern" value="<%= newsletterSourceDraft?.subjectPattern || '' %>" placeholder="Daily Briefing, Morning Report, etc." />
+              <p class="help">Use either sender, subject, or both. Patterns are matched case-insensitively.</p>
+            </div>
+            <div class="field">
+              <label class="label">Forwarding account pattern</label>
+              <input class="input" type="text" name="forwardedByPattern" value="<%= newsletterSourceDraft?.forwardedByPattern || '' %>" placeholder="Optional forwarding mailbox or alias" />
+              <p class="help">Optional. Match the account that forwarded the newsletter while still extracting the original publisher from the forwarded content.</p>
+            </div>
+            <div class="field">
+              <label class="label">Mailbox</label>
+              <input class="input" type="text" name="mailbox" value="<%= newsletterSourceDraft?.mailbox || 'INBOX' %>" placeholder="INBOX" />
+            </div>
+            <div class="field">
+              <label class="label">Guidance</label>
+              <textarea class="textarea" name="guidance" rows="3" placeholder="Tell the AI which blocks are real stories and what to ignore."><%= newsletterSourceDraft?.guidance || '' %></textarea>
+            </div>
+            <div class="field">
+              <label class="label">Folders</label>
+              <div class="fixed-checkbox-list">
+                <% if (categories.length === 0) { %>
+                  <p class="is-size-7">No folders yet. This source can still be created without one.</p>
+                <% } %>
+                <% categories.forEach((category) => { %>
+                  <label class="checkbox is-block mb-2">
+                    <input type="checkbox" name="categoryIds" value="<%= category._id %>" <%= newsletterSourceDraft?.categoryIds?.includes(String(category._id)) ? "checked" : "" %> />
+                    <span class="ml-2"><%= category.name %></span>
+                  </label>
+                <% }) %>
+              </div>
+            </div>
+            <% if (newsletterSourceDraft?.feedId) { %>
+              <input type="hidden" name="feedId" value="<%= newsletterSourceDraft.feedId %>" />
+            <% } %>
+            <button class="button is-primary">Preview Newsletter</button>
+          </form>
+
+          <% if (newsletterSourceDraft?.candidate) { %>
+            <hr />
+            <h3 class="title is-6">Verify Extracted Newsletter Items</h3>
+            <% if (newsletterSourceDraft.message) { %>
+              <div class="notification is-light mb-4">
+                <p class="has-text-weight-semibold"><%= newsletterSourceDraft.message.subject %></p>
+                <p class="is-size-7">From <%= newsletterSourceDraft.message.from %></p>
+                <% if (newsletterSourceDraft.message.originalFrom || newsletterSourceDraft.message.originalSubject) { %>
+                  <p class="is-size-7">Original newsletter: <%= newsletterSourceDraft.message.originalFrom || "Unknown sender" %><% if (newsletterSourceDraft.message.originalSubject) { %> | <%= newsletterSourceDraft.message.originalSubject %><% } %></p>
+                <% } %>
+                <% if (newsletterSourceDraft.message.receivedAt) { %>
+                  <p class="is-size-7">Received <%= new Date(newsletterSourceDraft.message.receivedAt).toLocaleString() %></p>
+                <% } %>
+                <% if (newsletterSourceDraft.candidate.generationModel) { %>
+                  <p class="is-size-7 mt-2">Rule model: <strong><%= newsletterSourceDraft.candidate.generationModel %></strong><% if (newsletterSourceDraft.candidate.generationFallbackUsed) { %> (fallback used)<% } %></p>
+                <% } %>
+              </div>
+            <% } %>
+            <% newsletterSourceDraft.candidate.previewItems.forEach((item) => { %>
+              <article class="box mb-3">
+                <p class="has-text-weight-semibold"><a href="<%= item.link %>" target="_blank" rel="noreferrer"><%= item.title %></a></p>
+                <% if (item.publishedAt) { %><p class="is-size-7"><%= item.publishedAt %></p><% } %>
+                <% if (item.summary) { %><p class="is-size-7 mt-2"><%= item.summary %></p><% } %>
+              </article>
+            <% }) %>
+            <div class="buttons">
+              <form action="/prefs/newsletter-sources/confirm" method="post">
+                <button class="button is-success">Confirm Newsletter Source</button>
+              </form>
+              <form action="/prefs/newsletter-sources/discard" method="post">
+                <button class="button is-light">Discard</button>
+              </form>
+            </div>
+            <p class="is-size-7 mt-2">Need a different result? Adjust the sender, subject, or guidance above and preview again.</p>
+          <% } %>
+
+          <% if (newsletterSources.length > 0) { %>
+            <hr />
+            <h3 class="title is-6">Existing Newsletter Sources</h3>
+            <% newsletterSources.forEach((source) => { %>
+              <details class="box mb-3 disclosure-panel">
+                <summary class="disclosure-summary">
+                  <div>
+                    <p class="has-text-weight-semibold"><%= source.title %></p>
+                    <p class="is-size-7"><%= source.newsletterConfig?.senderPattern || "Any sender" %> | <%= source.newsletterConfig?.subjectPattern || "Any subject" %></p>
+                  </div>
+                  <span class="tag <%= source.newsletterConfig?.verificationStatus === 'failed' ? 'is-danger is-light' : 'is-success is-light' %>">
+                    <%= source.newsletterConfig?.verificationStatus || 'verified' %>
+                  </span>
+                </summary>
+                <div class="disclosure-body">
+                  <p class="is-size-7 mb-3">Mailbox: <strong><%= source.newsletterConfig?.mailbox || "INBOX" %></strong></p>
+                  <% if (source.newsletterConfig?.forwardedByPattern) { %>
+                    <p class="is-size-7 mb-3">Forwarded by: <strong><%= source.newsletterConfig.forwardedByPattern %></strong></p>
+                  <% } %>
+                  <p class="is-size-7 mb-3">Guidance: <%= source.newsletterConfig?.guidance || "None" %></p>
+                  <% if (source.newsletterConfig?.latestMessageSubject) { %>
+                    <p class="is-size-7 mb-3">Last matched message: <%= source.newsletterConfig.latestMessageSubject %></p>
+                  <% } %>
+                  <form action="/prefs/newsletter-sources/preview" method="post">
+                    <input type="hidden" name="feedId" value="<%= source._id %>" />
+                    <input type="hidden" name="title" value="<%= source.title %>" />
+                    <input type="hidden" name="senderPattern" value="<%= source.newsletterConfig?.senderPattern || '' %>" />
+                    <input type="hidden" name="subjectPattern" value="<%= source.newsletterConfig?.subjectPattern || '' %>" />
+                    <input type="hidden" name="forwardedByPattern" value="<%= source.newsletterConfig?.forwardedByPattern || '' %>" />
+                    <input type="hidden" name="mailbox" value="<%= source.newsletterConfig?.mailbox || 'INBOX' %>" />
+                    <% getFeedCategoryIds(source).forEach((categoryId) => { %>
+                      <input type="hidden" name="categoryIds" value="<%= categoryId %>" />
+                    <% }) %>
+                    <div class="field">
+                      <label class="label">Repair guidance</label>
+                      <textarea class="textarea" name="guidance" rows="2"><%= source.newsletterConfig?.guidance || "" %></textarea>
+                    </div>
+                    <button class="button is-light">Generate Repair Preview</button>
+                  </form>
+                </div>
+              </details>
+            <% }) %>
+          <% } %>
+        </div>
+
+        <div class="box glass-panel">
+          <h2 class="title is-5">Bluesky Sources</h2>
+          <p class="is-size-7 mb-4">Create a feed from a Bluesky profile using the public Bluesky AppView.</p>
+          <% if (blueskySourceError) { %>
+            <div class="notification is-danger is-light mb-4"><%= blueskySourceError %></div>
+          <% } %>
+          <form action="/prefs/bluesky-sources/preview" method="post">
+            <div class="field">
+              <label class="label">Feed title</label>
+              <input class="input" type="text" name="title" value="<%= blueskySourceDraft?.feedId ? '' : (blueskySourceDraft?.title || '') %>" placeholder="Optional title override" />
+            </div>
+            <div class="field">
+              <label class="label">Bluesky handle</label>
+              <input class="input" type="text" name="handle" value="<%= blueskySourceDraft?.handle || '' %>" placeholder="example.bsky.social" required />
+              <p class="help">Enter the handle without the profile URL. `@` is optional.</p>
+            </div>
+            <div class="field is-grouped is-grouped-multiline">
+              <label class="checkbox mr-4">
+                <input type="checkbox" name="includeReplies" <%= blueskySourceDraft?.includeReplies ? "checked" : "" %> />
+                <span class="ml-2">Include replies</span>
+              </label>
+              <label class="checkbox">
+                <input type="checkbox" name="includeReposts" <%= blueskySourceDraft?.includeReposts ? "checked" : "" %> />
+                <span class="ml-2">Include reposts</span>
+              </label>
+            </div>
+            <div class="field">
+              <label class="label">Folders</label>
+              <div class="fixed-checkbox-list">
+                <% if (categories.length === 0) { %>
+                  <p class="is-size-7">No folders yet. This source can still be created without one.</p>
+                <% } %>
+                <% categories.forEach((category) => { %>
+                  <label class="checkbox is-block mb-2">
+                    <input type="checkbox" name="categoryIds" value="<%= category._id %>" <%= blueskySourceDraft?.categoryIds?.includes(String(category._id)) ? "checked" : "" %> />
+                    <span class="ml-2"><%= category.name %></span>
+                  </label>
+                <% }) %>
+              </div>
+            </div>
+            <% if (blueskySourceDraft?.feedId) { %>
+              <input type="hidden" name="feedId" value="<%= blueskySourceDraft.feedId %>" />
+            <% } %>
+            <button class="button is-primary">Preview Bluesky Source</button>
+          </form>
+
+          <% if (blueskySourceDraft?.candidate) { %>
+            <hr />
+            <h3 class="title is-6">Verify Bluesky Posts</h3>
+            <div class="notification is-light mb-4">
+              <p class="has-text-weight-semibold"><%= blueskySourceDraft.candidate.feedTitle %></p>
+              <p class="is-size-7"><a href="<%= blueskySourceDraft.candidate.siteUrl %>" target="_blank" rel="noreferrer"><%= blueskySourceDraft.candidate.siteUrl %></a></p>
+              <p class="is-size-7 mt-2"><%= blueskySourceDraft.candidate.notes %></p>
+            </div>
+            <% blueskySourceDraft.candidate.previewItems.forEach((item) => { %>
+              <article class="box mb-3">
+                <p class="has-text-weight-semibold"><a href="<%= item.link %>" target="_blank" rel="noreferrer"><%= item.title %></a></p>
+                <% if (item.publishedAt) { %><p class="is-size-7"><%= item.publishedAt %></p><% } %>
+                <% if (item.summary) { %><p class="is-size-7 mt-2"><%= item.summary %></p><% } %>
+              </article>
+            <% }) %>
+            <div class="buttons">
+              <form action="/prefs/bluesky-sources/confirm" method="post">
+                <button class="button is-success">Confirm Bluesky Source</button>
+              </form>
+              <form action="/prefs/bluesky-sources/discard" method="post">
+                <button class="button is-light">Discard</button>
+              </form>
+            </div>
+          <% } %>
+
+          <% if (blueskySources.length > 0) { %>
+            <hr />
+            <h3 class="title is-6">Existing Bluesky Sources</h3>
+            <% blueskySources.forEach((source) => { %>
+              <details class="box mb-3 disclosure-panel">
+                <summary class="disclosure-summary">
+                  <div>
+                    <p class="has-text-weight-semibold"><%= source.title %></p>
+                    <p class="is-size-7">@<%= source.blueskyConfig?.handle || source.feedUrl %></p>
+                  </div>
+                  <span class="tag <%= source.blueskyConfig?.verificationStatus === 'failed' ? 'is-danger is-light' : 'is-success is-light' %>">
+                    <%= source.blueskyConfig?.verificationStatus || 'verified' %>
+                  </span>
+                </summary>
+                <div class="disclosure-body">
+                  <p class="is-size-7 mb-3">Replies: <strong><%= source.blueskyConfig?.includeReplies ? "included" : "excluded" %></strong> | Reposts: <strong><%= source.blueskyConfig?.includeReposts ? "included" : "excluded" %></strong></p>
+                  <form action="/prefs/bluesky-sources/preview" method="post">
+                    <input type="hidden" name="feedId" value="<%= source._id %>" />
+                    <input type="hidden" name="title" value="<%= source.title %>" />
+                    <input type="hidden" name="handle" value="<%= source.blueskyConfig?.handle || '' %>" />
+                    <% if (source.blueskyConfig?.includeReplies) { %><input type="hidden" name="includeReplies" value="on" /><% } %>
+                    <% if (source.blueskyConfig?.includeReposts) { %><input type="hidden" name="includeReposts" value="on" /><% } %>
+                    <% getFeedCategoryIds(source).forEach((categoryId) => { %>
+                      <input type="hidden" name="categoryIds" value="<%= categoryId %>" />
+                    <% }) %>
+                    <button class="button is-light">Generate Repair Preview</button>
+                  </form>
+                </div>
+              </details>
+            <% }) %>
+          <% } %>
+        </div>
+
+        <div class="box glass-panel">
           <h2 class="title is-5">Generated Feeds</h2>
           <form action="/prefs/generated-feeds" method="post">
             <div class="field">
